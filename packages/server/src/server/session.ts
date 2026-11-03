@@ -6963,8 +6963,11 @@ export class Session {
 
   private async resolveCreationCaller(callerAgentId?: string): Promise<CreateAgentCaller | null> {
     if (!callerAgentId) return null;
-    const caller =
-      this.agentManager.getAgent(callerAgentId) ?? (await this.agentStorage.get(callerAgentId));
+    let caller: CreateAgentCaller | null = this.agentManager.getAgent(callerAgentId);
+    if (!caller) {
+      const stored = await this.agentStorage.get(callerAgentId);
+      if (stored && !stored.archivedAt) caller = stored;
+    }
     if (!caller) throw new Error(`Caller agent ${callerAgentId} not found`);
     return { id: caller.id, cwd: caller.cwd, workspaceId: caller.workspaceId };
   }
