@@ -119,7 +119,11 @@ import type {
   ManagedAgent,
 } from "./agent/agent-manager.js";
 import { createAgentCommand } from "./agent/create-agent/create.js";
-import { resolveCreateAgentIntent, type CreateAgentIntent } from "./agent/create-agent/intent.js";
+import {
+  resolveCreateAgentIntent,
+  type CreateAgentIntent,
+  type CreateAgentCaller,
+} from "./agent/create-agent/intent.js";
 import {
   archiveAgentCommand,
   cancelAgentRunCommand,
@@ -4586,7 +4590,7 @@ export class Session {
         target: worktree,
         firstAgentContext,
         background: msg.background,
-        callerWorkspaceId: this.getCallerWorkspaceId(msg.callerAgentId),
+        callerWorkspaceId: (await this.resolveCreationCaller(msg.callerAgentId))?.workspaceId,
       });
       createdWorktreeForCleanup = createdWorktree;
       const resolvedIntent = await this.resolveSessionCreateAgentIntent({
@@ -4671,20 +4675,13 @@ export class Session {
     workspacePromptTitle: string | null;
   }): Promise<ResolvedSessionCreateAgentIntent> {
     const { request, createdWorktree } = input;
-    const callerAgent = request.callerAgentId
-      ? this.agentManager.getAgent(request.callerAgentId)
-      : null;
-    if (request.callerAgentId && !callerAgent) {
-      throw new Error(`Caller agent ${request.callerAgentId} not found`);
-    }
+    const callerAgent = await this.resolveCreationCaller(request.callerAgentId);
 
     let config = request.config;
 
     const intent = await resolveCreateAgentIntent({
       explicitWorkspaceId: createdWorktree?.workspace.workspaceId ?? request.workspaceId,
-      caller: callerAgent
-        ? { id: callerAgent.id, cwd: callerAgent.cwd, workspaceId: callerAgent.workspaceId }
-        : null,
+      caller: callerAgent,
       labels: request.labels,
       resolveWorkspace: async (workspaceId) => {
         if (createdWorktree?.workspace.workspaceId === workspaceId) {
@@ -6964,11 +6961,12 @@ export class Session {
     }
   }
 
-  private getCallerWorkspaceId(callerAgentId?: string): string | undefined {
-    if (!callerAgentId) return undefined;
-    const caller = this.agentManager.getAgent(callerAgentId);
+  private async resolveCreationCaller(callerAgentId?: string): Promise<CreateAgentCaller | null> {
+    if (!callerAgentId) return null;
+    const caller =
+      this.agentManager.getAgent(callerAgentId) ?? (await this.agentStorage.get(callerAgentId));
     if (!caller) throw new Error(`Caller agent ${callerAgentId} not found`);
-    return caller.workspaceId;
+    return { id: caller.id, cwd: caller.cwd, workspaceId: caller.workspaceId };
   }
 
   private async createRequestedWorkspace(
@@ -7018,7 +7016,7 @@ export class Session {
         expectsInitialAgent: Boolean(request.firstAgentContext),
         workspaceId,
         background: request.background,
-        callerWorkspaceId: this.getCallerWorkspaceId(request.callerAgentId),
+        callerWorkspaceId: (await this.resolveCreationCaller(request.callerAgentId))?.workspaceId,
       },
     );
     await this.syncWorkspaceGitObserverForWorkspace(workspace);
@@ -7082,7 +7080,7 @@ export class Session {
         firstAgentContext: request.firstAgentContext,
         title: request.title,
         background: request.background,
-        callerWorkspaceId: this.getCallerWorkspaceId(request.callerAgentId),
+        callerWorkspaceId: (await this.resolveCreationCaller(request.callerAgentId))?.workspaceId,
       },
       source.baseBranch
         ? { resolveDefaultBranch: async () => source.baseBranch as string }
