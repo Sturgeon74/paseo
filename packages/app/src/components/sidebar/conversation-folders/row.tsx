@@ -21,6 +21,7 @@ interface ConversationFolderRowProps {
   onPress: () => void;
   menu?: ReactNode;
   pages?: MenuPageDefinition[];
+  color?: string;
 }
 
 export function ConversationFolderRow({
@@ -33,6 +34,7 @@ export function ConversationFolderRow({
   onPress,
   menu,
   pages,
+  color,
 }: ConversationFolderRowProps) {
   const { t } = useTranslation();
   const accessibilityState = expanded === undefined ? undefined : { expanded };
@@ -46,6 +48,7 @@ export function ConversationFolderRow({
           color="foregroundMuted"
         />
       ) : null}
+      {color ? <View style={[styles.colorDot, { backgroundColor: color }]} /> : null}
       <DensityIcon icon={icon} size="sm" color="foregroundMuted" />
       <Text numberOfLines={1} style={styles.title}>
         {label}
@@ -61,7 +64,7 @@ export function ConversationFolderRow({
     ({ hovered, pressed, open }: { hovered?: boolean; pressed: boolean; open?: boolean }) => [
       styles.row,
       Boolean(menu) && styles.rowContent,
-      { paddingStart: 8 + Math.min(depth, 8) * 12 },
+      { paddingStart: 8 + Math.min(depth, 8) * 18 },
       (hovered || pressed || open) && styles.highlight,
     ],
     [depth, menu],
@@ -115,6 +118,7 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
   },
   rowContent: { flex: 1 },
+  colorDot: { width: 8, height: 8, borderRadius: 4 },
   row: {
     minWidth: 0,
     minHeight: density.rowHeight,

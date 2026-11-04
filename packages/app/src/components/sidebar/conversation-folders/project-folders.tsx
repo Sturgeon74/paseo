@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Folder, FolderPlus, MessageSquare } from "lucide-react-native";
+import { Folder, MessageSquare } from "lucide-react-native";
 import { AdaptiveRenameModal } from "@/components/rename-modal";
 import { ContextMenuItem } from "@/components/ui/context-menu";
 import { DropdownMenuSubTrigger, type MenuPageDefinition } from "@/components/ui/dropdown-menu";
@@ -12,6 +12,11 @@ import { getHostRuntimeStore, useHostRuntimeIsConnected, useHosts } from "@/runt
 import { useSessionStore, type Agent } from "@/stores/session-store";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
 import {
+  deriveIdentityColorName,
+  IDENTITY_COLOR_NAMES,
+  identityColor,
+} from "@/styles/identity-colors";
+import {
   conversationProjectKey,
   groupConversations,
   placeFolders,
@@ -21,15 +26,20 @@ import {
 } from "./model";
 import { ConversationFolderRow } from "./row";
 import { conversationFolderStore } from "./store";
+import { FolderDragContainer } from "./drag-container";
 
 interface ProjectConversationFoldersProps {
   project: SidebarProjectEntry;
   onOpenConversation?: () => void;
+  createRequest?: number;
+  onCreateHandled?: () => void;
 }
 
 export function ProjectConversationFolders({
   project,
   onOpenConversation,
+  createRequest = 0,
+  onCreateHandled,
 }: ProjectConversationFoldersProps) {
   useEffect(() => {
     void conversationFolderStore.load();
@@ -43,6 +53,12 @@ export function ProjectConversationFolders({
         projectViewKey={project.viewKey}
         serverId={serverId}
         showHost={project.hosts.length > 1}
+        createRequest={
+          project.hosts[0]?.serverId === serverId && project.hosts[0]?.projectId === projectId
+            ? createRequest
+            : 0
+        }
+        onCreateHandled={onCreateHandled}
         onOpenConversation={onOpenConversation}
       />
     );
@@ -55,10 +71,12 @@ interface HostProjectFoldersProps {
   serverId: string;
   showHost: boolean;
   onOpenConversation?: () => void;
+  createRequest: number;
+  onCreateHandled?: () => void;
 }
 
 type NameDialog =
-  | { kind: "create"; parentId: string | null }
+  | { kind: "create"; parentId: string | null; agentId?: string }
   | { kind: "folder"; id: string; name: string }
   | { kind: "agent"; id: string; name: string };
 
@@ -68,6 +86,8 @@ function HostProjectFolders({
   serverId,
   showHost,
   onOpenConversation,
+  createRequest,
+  onCreateHandled,
 }: HostProjectFoldersProps) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -82,6 +102,12 @@ function HostProjectFolders({
   const createLabel = t("sidebar.conversationFolders.create");
   const renameFolderLabel = t("sidebar.conversationFolders.renameFolder");
   const renameAgentLabel = t("workspace.tabs.menu.renameAgent");
+  useEffect(() => {
+    if (createRequest > 0) {
+      setDialog({ kind: "create", parentId: null });
+      onCreateHandled?.();
+    }
+  }, [createRequest, onCreateHandled]);
 
   const change = useCallback(
     (action: FolderAction) => {
@@ -103,7 +129,22 @@ function HostProjectFolders({
       }
       const action: FolderAction =
         dialog.kind === "create"
-          ? { kind: "create", id: crypto.randomUUID(), name, parentId: dialog.parentId }
+          ? {
+              kind: "create",
+              id: crypto.randomUUID(),
+              name,
+              parentId: dialog.parentId,
+              agentId: dialog.agentId,
+              color:
+                IDENTITY_COLOR_NAMES.find(
+                  (color) =>
+                    color !== deriveIdentityColorName(projectViewKey) &&
+                    !folders?.folders.some((folder) => folder.color === color),
+                ) ??
+                IDENTITY_COLOR_NAMES.find(
+                  (color) => color !== deriveIdentityColorName(projectViewKey),
+                ),
+            }
           : { kind: "rename", id: dialog.id, name };
       try {
         await conversationFolderStore.change(projectKey, action);
@@ -111,13 +152,9 @@ function HostProjectFolders({
         throw new Error(t("sidebar.conversationFolders.saveFailed"));
       }
     },
-    [dialog, projectKey, serverId, t],
+    [dialog, folders, projectKey, projectViewKey, serverId, t],
   );
 
-  const createFolder = useCallback(() => {
-    if (status === "ready") setDialog({ kind: "create", parentId: null });
-    else toast.error(t("sidebar.conversationFolders.loadFailed"));
-  }, [status, toast, t]);
   const closeDialog = useCallback(() => setDialog(null), []);
   const renameLabel = dialog?.kind === "folder" ? renameFolderLabel : renameAgentLabel;
 
@@ -138,14 +175,6 @@ function HostProjectFolders({
           hostLabel={host}
         />
       ) : null}
-      <ConversationFolderRow
-        icon={FolderPlus}
-        label={createLabel}
-        detail={host}
-        depth={0}
-        testID={`sidebar-conversation-new-folder-${projectKey}`}
-        onPress={createFolder}
-      />
       {dialog ? (
         <AdaptiveRenameModal
           visible
@@ -184,7 +213,7 @@ function FolderTree({
   projectViewKey,
   serverId,
   online,
-  hostLabel,
+  hostLabel: _hostLabel,
   onOpenConversation,
   onChange,
   onName,
@@ -206,7 +235,7 @@ function FolderTree({
     return groupConversations(visible, folders.assignments, placements);
   }, [agents, workspaceEntriesByKey, serverId, projectViewKey, folders.assignments, placements]);
 
-  const unfiledLabel = t("sidebar.conversationFolders.unfiled");
+  const unfiledLabel = t("sidebar.conversationFolders.projectRoot");
   const folderChoices = useMemo(
     () => [
       { id: null, path: unfiledLabel },
@@ -214,11 +243,26 @@ function FolderTree({
     ],
     [unfiledLabel, placements],
   );
-  const toggleUnfiled = useCallback(() => onChange({ kind: "toggle", id: null }), [onChange]);
 
-  function renderAgents(folderId: string | null, depth: number) {
+  const filedWorkspaces = useMemo(
+    () =>
+      new Set(
+        [...groups.entries()].flatMap(([folderId, entries]) =>
+          folderId === null
+            ? []
+            : entries.flatMap((agent) => (agent.workspaceId ? [agent.workspaceId] : [])),
+        ),
+      ),
+    [groups],
+  );
+
+  function renderAgents(folderId: string | null, depth: number, workspaceFilter?: Set<string>) {
     return groups
       .get(folderId)
+      ?.filter(
+        (agent) =>
+          !workspaceFilter || (agent.workspaceId && workspaceFilter.has(agent.workspaceId)),
+      )
       ?.map((agent) => (
         <ConversationRow
           key={agent.id}
@@ -230,6 +274,17 @@ function FolderTree({
           onOpenConversation={onOpenConversation}
           onName={onName}
           onChange={onChange}
+          projectKey={projectKey}
+          color={
+            folderId
+              ? identityColor(
+                  placements.find(({ folder }) => folder.id === folderId)?.folder.color ??
+                    IDENTITY_COLOR_NAMES.find(
+                      (color) => color !== deriveIdentityColorName(projectViewKey),
+                    )!,
+                )
+              : undefined
+          }
         />
       ));
   }
@@ -249,19 +304,18 @@ function FolderTree({
             canMoveDown={canMoveDown}
             onChange={onChange}
             onName={onName}
+            projectKey={projectKey}
+            color={
+              folder.color ??
+              IDENTITY_COLOR_NAMES.find(
+                (color) => color !== deriveIdentityColorName(projectViewKey),
+              )!
+            }
+            folderChoices={folderChoices}
             conversations={folder.collapsed ? null : renderAgents(folder.id, depth + 1)}
           />
         ))}
-      <ConversationFolderRow
-        icon={Folder}
-        label={unfiledLabel}
-        detail={hostLabel}
-        expanded={!folders.unfiledCollapsed}
-        depth={0}
-        testID={`sidebar-conversation-unfiled-${projectKey}`}
-        onPress={toggleUnfiled}
-      />
-      {folders.unfiledCollapsed ? null : renderAgents(null, 1)}
+      {renderAgents(null, 0, filedWorkspaces)}
     </>
   );
 }
@@ -280,6 +334,8 @@ interface ConversationRowProps {
   onOpenConversation: FolderTreeProps["onOpenConversation"];
   onName: FolderTreeProps["onName"];
   onChange: FolderTreeProps["onChange"];
+  projectKey: string;
+  color?: string;
 }
 
 const ConversationRow = memo(function ConversationRow({
@@ -291,6 +347,8 @@ const ConversationRow = memo(function ConversationRow({
   onOpenConversation,
   onName,
   onChange,
+  projectKey,
+  color,
 }: ConversationRowProps) {
   const { t } = useTranslation();
   const { id, serverId, workspaceId, provider, title } = agent;
@@ -305,6 +363,10 @@ const ConversationRow = memo(function ConversationRow({
   const move = useCallback(
     (target: string | null) => onChange({ kind: "move", agentId: id, folderId: target }),
     [id, onChange],
+  );
+  const createAndMove = useCallback(
+    () => onName({ kind: "create", parentId: folderId, agentId: id }),
+    [onName, folderId, id],
   );
   const moveLabel = t("sidebar.conversationFolders.move");
   const pages = useMemo<MenuPageDefinition[]>(
@@ -321,24 +383,30 @@ const ConversationRow = memo(function ConversationRow({
   );
 
   return (
-    <ConversationFolderRow
-      icon={MessageSquare}
-      label={title || provider}
-      depth={depth}
-      testID={`sidebar-conversation-${serverId}-${id}`}
-      onPress={open}
-      pages={pages}
-      menu={
-        <>
-          <ContextMenuItem disabled={!online} onSelect={rename}>
-            {t("workspace.tabs.menu.renameAgent")}
-          </ContextMenuItem>
-          <DropdownMenuSubTrigger id="move-conversation" disabled={folderChoices.length < 2}>
-            {moveLabel}
-          </DropdownMenuSubTrigger>
-        </>
-      }
-    />
+    <FolderDragContainer projectKey={projectKey} itemKind="agent" itemId={id}>
+      <ConversationFolderRow
+        icon={MessageSquare}
+        label={title || provider}
+        depth={depth}
+        color={color}
+        testID={`sidebar-conversation-${serverId}-${id}`}
+        onPress={open}
+        pages={pages}
+        menu={
+          <>
+            <ContextMenuItem disabled={!online} onSelect={rename}>
+              {t("workspace.tabs.menu.renameAgent")}
+            </ContextMenuItem>
+            <DropdownMenuSubTrigger id="move-conversation" disabled={folderChoices.length < 2}>
+              {moveLabel}
+            </DropdownMenuSubTrigger>
+            <ContextMenuItem onSelect={createAndMove}>
+              {t("sidebar.conversationFolders.createAndMove")}
+            </ContextMenuItem>
+          </>
+        }
+      />
+    </FolderDragContainer>
   );
 });
 
@@ -388,6 +456,9 @@ interface FolderBranchProps {
   onChange: FolderTreeProps["onChange"];
   onName: FolderTreeProps["onName"];
   conversations: ReactNode;
+  projectKey: string;
+  color: NonNullable<ProjectFolders["folders"][number]["color"]>;
+  folderChoices: FolderChoice[];
 }
 
 function FolderBranch({
@@ -400,6 +471,9 @@ function FolderBranch({
   onChange,
   onName,
   conversations,
+  projectKey,
+  color,
+  folderChoices,
 }: FolderBranchProps) {
   const { t } = useTranslation();
   const toggle = useCallback(() => onChange({ kind: "toggle", id }), [id, onChange]);
@@ -417,41 +491,128 @@ function FolderBranch({
     [id, onChange],
   );
   const remove = useCallback(() => onChange({ kind: "remove", id }), [id, onChange]);
+  const onDropItem = useCallback(
+    (item: { kind: "folder" | "agent"; id: string }) =>
+      onChange(
+        item.kind === "folder"
+          ? { kind: "reparent", id: item.id, parentId: id }
+          : { kind: "move", agentId: item.id, folderId: id },
+      ),
+    [id, onChange],
+  );
+  const pages: MenuPageDefinition[] = [
+    {
+      id: "folder-color",
+      title: t("sidebar.conversationFolders.color"),
+      content: IDENTITY_COLOR_NAMES.map((name) => (
+        <FolderColorItem
+          key={name}
+          name={name}
+          selected={name === color}
+          id={id}
+          onChange={onChange}
+        />
+      )),
+    },
+    {
+      id: "folder-move",
+      title: t("sidebar.conversationFolders.move"),
+      content: folderChoices
+        .filter((choice) => choice.id !== id)
+        .map((choice) => (
+          <FolderParentItem key={choice.id ?? "root"} choice={choice} id={id} onChange={onChange} />
+        )),
+    },
+  ];
 
   return (
     <>
-      <ConversationFolderRow
-        icon={Folder}
-        label={label}
-        expanded={expanded}
-        depth={depth}
-        testID={`sidebar-conversation-folder-${id}`}
-        onPress={toggle}
-        menu={
-          <>
-            <ContextMenuItem onSelect={addChild}>
-              {t("sidebar.conversationFolders.createChild")}
-            </ContextMenuItem>
-            <ContextMenuItem onSelect={rename}>
-              {t("sidebar.conversationFolders.renameFolder")}
-            </ContextMenuItem>
-            <ContextMenuItem disabled={!canMoveUp} onSelect={moveUp}>
-              {t("sidebar.conversationFolders.moveUp")}
-            </ContextMenuItem>
-            <ContextMenuItem disabled={!canMoveDown} onSelect={moveDown}>
-              {t("sidebar.conversationFolders.moveDown")}
-            </ContextMenuItem>
-            <ContextMenuItem
-              destructive
-              description={t("sidebar.conversationFolders.removeDescription")}
-              onSelect={remove}
-            >
-              {t("sidebar.conversationFolders.remove")}
-            </ContextMenuItem>
-          </>
-        }
-      />
+      <FolderDragContainer
+        projectKey={projectKey}
+        itemKind="folder"
+        itemId={id}
+        onDropItem={onDropItem}
+      >
+        <ConversationFolderRow
+          icon={Folder}
+          label={label}
+          expanded={expanded}
+          depth={depth}
+          color={identityColor(color)}
+          testID={`sidebar-conversation-folder-${id}`}
+          onPress={toggle}
+          pages={pages}
+          menu={
+            <>
+              <ContextMenuItem onSelect={addChild}>
+                {t("sidebar.conversationFolders.createChild")}
+              </ContextMenuItem>
+              <ContextMenuItem onSelect={rename}>
+                {t("sidebar.conversationFolders.renameFolder")}
+              </ContextMenuItem>
+              <DropdownMenuSubTrigger id="folder-color">
+                {t("sidebar.conversationFolders.color")}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubTrigger id="folder-move">
+                {t("sidebar.conversationFolders.move")}
+              </DropdownMenuSubTrigger>
+              <ContextMenuItem disabled={!canMoveUp} onSelect={moveUp}>
+                {t("sidebar.conversationFolders.moveUp")}
+              </ContextMenuItem>
+              <ContextMenuItem disabled={!canMoveDown} onSelect={moveDown}>
+                {t("sidebar.conversationFolders.moveDown")}
+              </ContextMenuItem>
+              <ContextMenuItem
+                destructive
+                description={t("sidebar.conversationFolders.removeDescription")}
+                onSelect={remove}
+              >
+                {t("sidebar.conversationFolders.remove")}
+              </ContextMenuItem>
+            </>
+          }
+        />
+      </FolderDragContainer>
       {conversations}
     </>
   );
+}
+
+function FolderColorItem({
+  name,
+  selected,
+  id,
+  onChange,
+}: {
+  name: NonNullable<ProjectFolders["folders"][number]["color"]>;
+  selected: boolean;
+  id: string;
+  onChange: FolderTreeProps["onChange"];
+}) {
+  const { t } = useTranslation();
+  const select = useCallback(
+    () => onChange({ kind: "color", id, color: name }),
+    [id, name, onChange],
+  );
+  return (
+    <ContextMenuItem selected={selected} onSelect={select}>
+      {t(`workspaceLabels.colors.${name}`)}
+    </ContextMenuItem>
+  );
+}
+
+function FolderParentItem({
+  choice,
+  id,
+  onChange,
+}: {
+  choice: FolderChoice;
+  id: string;
+  onChange: FolderTreeProps["onChange"];
+}) {
+  const select = useCallback(
+    () => onChange({ kind: "reparent", id, parentId: choice.id }),
+    [choice.id, id, onChange],
+  );
+  return <ContextMenuItem onSelect={select}>{choice.path}</ContextMenuItem>;
 }

@@ -1151,6 +1151,9 @@ export const zhCN: TranslationResources = {
   },
   sidebar: {
     conversationFolders: {
+      color: "文件夹颜色",
+      projectRoot: "项目根目录",
+      createAndMove: "新建文件夹并移动",
       create: "新建会话文件夹",
       createAction: "创建",
       createChild: "新建子文件夹",
@@ -1159,7 +1162,7 @@ export const zhCN: TranslationResources = {
       moveUp: "上移",
       moveDown: "下移",
       remove: "移除文件夹",
-      removeDescription: "会话将移回未归类。子文件夹将上移一级。",
+      removeDescription: "对话返回项目，子文件夹上移一级。",
       unfiled: "未归类",
       actionsFor: "{{name}}的操作",
       loadFailed: "无法加载会话文件夹。",

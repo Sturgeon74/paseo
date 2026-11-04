@@ -45,6 +45,7 @@ import {
   WORKSPACE_LABEL_PAGE_ID,
   type WorkspaceLabelTarget,
 } from "@/workspace-labels/picker";
+import { useWorkspaceConversationFolderMenu } from "@/components/sidebar/conversation-folders/workspace-menu";
 
 const foregroundColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
 const foregroundMutedColorMapping = (theme: Theme) => ({
@@ -82,6 +83,7 @@ export interface SidebarWorkspaceMenuProps {
   workspaceKey: string;
   serverId?: string;
   workspaceId?: string;
+  projectViewKey?: string;
   workspaceLabels?: readonly string[];
   onCopyPath?: () => void;
   onCopyBranchName?: () => void;
@@ -252,6 +254,7 @@ export function SidebarWorkspaceMenu({
   workspaceKey,
   serverId,
   workspaceId,
+  projectViewKey,
   workspaceLabels,
   onCopyPath,
   onCopyBranchName,
@@ -276,45 +279,50 @@ export function SidebarWorkspaceMenu({
     [serverId, workspaceId, workspaceLabels],
   );
   const pages = useWorkspaceLabelMenuPages(workspaceTarget);
+  const folders = useWorkspaceConversationFolderMenu(serverId, workspaceId, projectViewKey);
   return (
-    <DropdownMenu compactMode="sheet" open={open} onOpenChange={onOpenChange}>
-      <DropdownMenuTrigger
-        hitSlop={8}
-        style={triggerStyle}
-        accessibilityRole={isWeb ? undefined : "button"}
-        accessibilityLabel={t("sidebar.workspace.actions.menu")}
-        testID={`sidebar-workspace-kebab-${workspaceKey}`}
-      >
-        {renderTriggerIcon}
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        width={260}
-        pages={pages}
-        sheetTitle={t("sidebar.workspace.actions.menu")}
-      >
-        <SidebarWorkspaceMenuItems
-          surface="dropdown"
-          workspaceKey={workspaceKey}
-          serverId={serverId}
-          workspaceId={workspaceId}
-          workspaceLabels={workspaceLabels}
-          onCopyPath={onCopyPath}
-          onCopyBranchName={onCopyBranchName}
-          onRename={onRename}
-          onMarkAsRead={onMarkAsRead}
-          onMarkAsUnread={onMarkAsUnread}
-          onArchive={onArchive}
-          archiveLabel={archiveLabel}
-          archiveStatus={archiveStatus}
-          archivePendingLabel={archivePendingLabel}
-          archiveShortcutKeys={archiveShortcutKeys}
-          isPinned={isPinned}
-          onTogglePin={onTogglePin}
-          openInFileManagerPath={openInFileManagerPath}
-        />
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <>
+      <DropdownMenu compactMode="sheet" open={open} onOpenChange={onOpenChange}>
+        <DropdownMenuTrigger
+          hitSlop={8}
+          style={triggerStyle}
+          accessibilityRole={isWeb ? undefined : "button"}
+          accessibilityLabel={t("sidebar.workspace.actions.menu")}
+          testID={`sidebar-workspace-kebab-${workspaceKey}`}
+        >
+          {renderTriggerIcon}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          width={260}
+          pages={[...pages, ...folders.pages]}
+          sheetTitle={t("sidebar.workspace.actions.menu")}
+        >
+          <SidebarWorkspaceMenuItems
+            surface="dropdown"
+            workspaceKey={workspaceKey}
+            serverId={serverId}
+            workspaceId={workspaceId}
+            workspaceLabels={workspaceLabels}
+            onCopyPath={onCopyPath}
+            onCopyBranchName={onCopyBranchName}
+            onRename={onRename}
+            onMarkAsRead={onMarkAsRead}
+            onMarkAsUnread={onMarkAsUnread}
+            onArchive={onArchive}
+            archiveLabel={archiveLabel}
+            archiveStatus={archiveStatus}
+            archivePendingLabel={archivePendingLabel}
+            archiveShortcutKeys={archiveShortcutKeys}
+            isPinned={isPinned}
+            onTogglePin={onTogglePin}
+            openInFileManagerPath={openInFileManagerPath}
+          />
+          {folders.items}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {folders.dialog}
+    </>
   );
 }
 
@@ -390,45 +398,54 @@ export function SidebarWorkspaceContextMenu({
     [workspace],
   );
   const pages = useWorkspaceLabelMenuPages(workspaceTarget);
+  const folders = useWorkspaceConversationFolderMenu(
+    workspace.serverId,
+    workspace.workspaceId,
+    workspace.projectViewKey,
+  );
 
   return (
-    <ContextMenu open={contextMenuOpen} onOpenChange={onContextMenuOpenChange}>
-      <ContextMenuTrigger
-        {...triggerProps}
-        enabledOnMobile={false}
-        accessibilityLabel={accessibilityLabel ?? rowAccessibilityLabel}
-        highlightStyle={highlightStyle}
-      >
-        {children}
-      </ContextMenuTrigger>
-      <ContextMenuContent
-        align="start"
-        width={260}
-        testID={`sidebar-workspace-context-menu-${workspaceKey}`}
-        pages={pages}
-      >
-        <SidebarWorkspaceMenuItems
-          surface="context"
-          workspaceKey={workspaceKey}
-          serverId={workspaceTarget.serverId}
-          workspaceId={workspaceTarget.workspaceId}
-          workspaceLabels={workspaceTarget.labels}
-          onCopyPath={onCopyPath}
-          onCopyBranchName={onCopyBranchName}
-          onRename={onRename}
-          onMarkAsRead={onMarkAsRead}
-          onMarkAsUnread={onMarkAsUnread}
-          onArchive={onArchive}
-          archiveLabel={archiveLabel}
-          archiveStatus={archiveStatus}
-          archivePendingLabel={archivePendingLabel}
-          archiveShortcutKeys={archiveShortcutKeys}
-          isPinned={isPinned}
-          onTogglePin={onTogglePin}
-          openInFileManagerPath={openInFileManagerPath}
-        />
-      </ContextMenuContent>
-    </ContextMenu>
+    <>
+      <ContextMenu open={contextMenuOpen} onOpenChange={onContextMenuOpenChange}>
+        <ContextMenuTrigger
+          {...triggerProps}
+          enabledOnMobile={false}
+          accessibilityLabel={accessibilityLabel ?? rowAccessibilityLabel}
+          highlightStyle={highlightStyle}
+        >
+          {children}
+        </ContextMenuTrigger>
+        <ContextMenuContent
+          align="start"
+          width={260}
+          testID={`sidebar-workspace-context-menu-${workspaceKey}`}
+          pages={[...pages, ...folders.pages]}
+        >
+          <SidebarWorkspaceMenuItems
+            surface="context"
+            workspaceKey={workspaceKey}
+            serverId={workspaceTarget.serverId}
+            workspaceId={workspaceTarget.workspaceId}
+            workspaceLabels={workspaceTarget.labels}
+            onCopyPath={onCopyPath}
+            onCopyBranchName={onCopyBranchName}
+            onRename={onRename}
+            onMarkAsRead={onMarkAsRead}
+            onMarkAsUnread={onMarkAsUnread}
+            onArchive={onArchive}
+            archiveLabel={archiveLabel}
+            archiveStatus={archiveStatus}
+            archivePendingLabel={archivePendingLabel}
+            archiveShortcutKeys={archiveShortcutKeys}
+            isPinned={isPinned}
+            onTogglePin={onTogglePin}
+            openInFileManagerPath={openInFileManagerPath}
+          />
+          {folders.items}
+        </ContextMenuContent>
+      </ContextMenu>
+      {folders.dialog}
+    </>
   );
 }
 

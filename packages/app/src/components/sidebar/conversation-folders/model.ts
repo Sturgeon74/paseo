@@ -1,11 +1,13 @@
 import { z } from "zod";
 import type { Agent } from "@/stores/session-store";
+import { IDENTITY_COLOR_NAMES } from "@/styles/identity-colors";
 
 const folderSchema = z.object({
   id: z.string().min(1),
   parentId: z.string().min(1).nullable(),
   name: z.string().trim().min(1).max(100),
   collapsed: z.boolean(),
+  color: z.enum(IDENTITY_COLOR_NAMES).optional(),
 });
 
 const projectSchema = z.object({
@@ -30,8 +32,17 @@ export const emptyProjectFolders: ProjectFolders = {
 };
 
 export type FolderAction =
-  | { kind: "create"; id: string; parentId: string | null; name: string }
+  | {
+      kind: "create";
+      id: string;
+      parentId: string | null;
+      name: string;
+      color?: ConversationFolder["color"];
+      agentId?: string;
+    }
   | { kind: "rename"; id: string; name: string }
+  | { kind: "color"; id: string; color: NonNullable<ConversationFolder["color"]> }
+  | { kind: "reparent"; id: string; parentId: string | null }
   | { kind: "toggle"; id: string | null }
   | { kind: "reorder"; id: string; direction: -1 | 1 }
   | { kind: "remove"; id: string }
@@ -41,21 +52,55 @@ export function conversationProjectKey(serverId: string, projectId: string): str
   return JSON.stringify([serverId, projectId]);
 }
 
-export function applyFolderAction(state: ProjectFolders, action: FolderAction): ProjectFolders {
-  if (action.kind === "move") {
-    if (
-      action.folderId !== null &&
-      !state.folders.some((folder) => folder.id === action.folderId)
-    ) {
-      return state;
-    }
-    const assignments = { ...state.assignments };
-    if (action.folderId === null) {
-      delete assignments[action.agentId];
-      return { ...state, assignments };
-    }
-    return { ...state, assignments: { ...assignments, [action.agentId]: action.folderId } };
+function reparentFolder(
+  state: ProjectFolders,
+  current: ConversationFolder,
+  index: number,
+  destination: string | null,
+): ProjectFolders {
+  if (destination === current.parentId) return state;
+  const folders = [...state.folders];
+  const byId = new Map(folders.map((folder) => [folder.id, folder]));
+  let parentId = destination;
+  const visited = new Set<string>();
+  while (parentId !== null) {
+    if (parentId === current.id || visited.has(parentId)) return state;
+    visited.add(parentId);
+    const parent = byId.get(parentId);
+    if (!parent) return state;
+    parentId = parent.parentId;
   }
+  folders[index] = { ...current, parentId: destination };
+  const targetIndex = folders.findIndex((folder) => folder.id === destination);
+  const target = folders[targetIndex];
+  if (target) folders[targetIndex] = { ...target, collapsed: false };
+  return { ...state, folders };
+}
+
+function moveConversation(
+  state: ProjectFolders,
+  action: Extract<FolderAction, { kind: "move" }>,
+): ProjectFolders {
+  if (action.folderId !== null && !state.folders.some((folder) => folder.id === action.folderId)) {
+    return state;
+  }
+  const assignments = { ...state.assignments };
+  if (action.folderId === null) {
+    delete assignments[action.agentId];
+    return { ...state, assignments };
+  }
+  return {
+    ...state,
+    folders: state.folders.map((folder) => {
+      if (folder.id === action.folderId) return { ...folder, collapsed: false };
+      return folder;
+    }),
+    assignments: { ...assignments, [action.agentId]: action.folderId },
+  };
+}
+
+export function applyFolderAction(state: ProjectFolders, action: FolderAction): ProjectFolders {
+  if (action.kind === "move") return moveConversation(state, action);
 
   if (action.kind === "create") {
     const folder = folderSchema.parse({ ...action, collapsed: false });
@@ -66,7 +111,13 @@ export function applyFolderAction(state: ProjectFolders, action: FolderAction): 
     const folders = state.folders.map((item) =>
       item.id === folder.parentId ? { ...item, collapsed: false } : item,
     );
-    return { ...state, folders: [...folders, folder] };
+    return {
+      ...state,
+      folders: [...folders, folder],
+      assignments: action.agentId
+        ? { ...state.assignments, [action.agentId]: folder.id }
+        : state.assignments,
+    };
   }
 
   if (action.kind === "toggle" && action.id === null) {
@@ -79,6 +130,11 @@ export function applyFolderAction(state: ProjectFolders, action: FolderAction): 
   const folders = [...state.folders];
 
   switch (action.kind) {
+    case "color":
+      folders[index] = folderSchema.parse({ ...current, color: action.color });
+      return { ...state, folders };
+    case "reparent":
+      return reparentFolder(state, current, index, action.parentId);
     case "rename":
       folders[index] = folderSchema.parse({ ...current, name: action.name });
       return { ...state, folders };

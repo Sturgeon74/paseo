@@ -1159,6 +1159,9 @@ export const ar: TranslationResources = {
   },
   sidebar: {
     conversationFolders: {
+      color: "لون المجلد",
+      projectRoot: "جذر المشروع",
+      createAndMove: "إنشاء مجلد ونقل",
       create: "مجلد محادثات جديد",
       createAction: "إنشاء",
       createChild: "مجلد فرعي جديد",
@@ -1167,7 +1170,7 @@ export const ar: TranslationResources = {
       moveUp: "نقل لأعلى",
       moveDown: "نقل لأسفل",
       remove: "إزالة المجلد",
-      removeDescription: "تعود المحادثات إلى غير مصنّفة. تنتقل المجلدات الفرعية مستوى واحدًا لأعلى.",
+      removeDescription: "تعود المحادثات إلى المشروع. تنتقل المجلدات الفرعية إلى المستوى الأعلى.",
       unfiled: "غير مصنّفة",
       actionsFor: "إجراءات {{name}}",
       loadFailed: "تعذّر تحميل مجلدات المحادثات.",

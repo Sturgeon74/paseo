@@ -1167,6 +1167,9 @@ export const en = {
   },
   sidebar: {
     conversationFolders: {
+      color: "Folder colour",
+      projectRoot: "Project root",
+      createAndMove: "Create folder and move",
       create: "New conversation folder",
       createAction: "Create",
       createChild: "New subfolder",
@@ -1175,7 +1178,7 @@ export const en = {
       moveUp: "Move up",
       moveDown: "Move down",
       remove: "Remove folder",
-      removeDescription: "Conversations return to Unfiled. Subfolders move up one level.",
+      removeDescription: "Conversations return to the project. Subfolders move up one level.",
       unfiled: "Unfiled",
       actionsFor: "Actions for {{name}}",
       loadFailed: "Conversation folders could not be loaded.",

@@ -1166,6 +1166,9 @@ export const ko: TranslationResources = {
   },
   sidebar: {
     conversationFolders: {
+      color: "폴더 색상",
+      projectRoot: "프로젝트 루트",
+      createAndMove: "폴더를 만들고 이동",
       create: "새 대화 폴더",
       createAction: "만들기",
       createChild: "새 하위 폴더",
@@ -1174,7 +1177,7 @@ export const ko: TranslationResources = {
       moveUp: "위로 이동",
       moveDown: "아래로 이동",
       remove: "폴더 제거",
-      removeDescription: "대화는 미분류로 돌아갑니다. 하위 폴더는 한 단계 위로 이동합니다.",
+      removeDescription: "대화는 프로젝트로 돌아가고 하위 폴더는 한 단계 위로 이동합니다.",
       unfiled: "미분류",
       actionsFor: "{{name}} 작업",
       loadFailed: "대화 폴더를 불러올 수 없습니다.",

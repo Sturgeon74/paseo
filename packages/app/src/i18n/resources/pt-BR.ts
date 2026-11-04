@@ -1185,6 +1185,9 @@ export const ptBR: TranslationResources = {
   },
   sidebar: {
     conversationFolders: {
+      color: "Cor da pasta",
+      projectRoot: "Raiz do projeto",
+      createAndMove: "Criar pasta e mover",
       create: "Nova pasta de conversas",
       createAction: "Criar",
       createChild: "Nova subpasta",
@@ -1193,7 +1196,7 @@ export const ptBR: TranslationResources = {
       moveUp: "Mover para cima",
       moveDown: "Mover para baixo",
       remove: "Remover pasta",
-      removeDescription: "As conversas voltam para Sem pasta. As subpastas sobem um nível.",
+      removeDescription: "As conversas voltam ao projeto. As subpastas sobem um nível.",
       unfiled: "Sem pasta",
       actionsFor: "Ações para {{name}}",
       loadFailed: "Não foi possível carregar as pastas de conversas.",

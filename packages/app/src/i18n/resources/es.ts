@@ -1195,6 +1195,9 @@ export const es: TranslationResources = {
   },
   sidebar: {
     conversationFolders: {
+      color: "Color de carpeta",
+      projectRoot: "Raíz del proyecto",
+      createAndMove: "Crear carpeta y mover",
       create: "Nueva carpeta de conversaciones",
       createAction: "Crear",
       createChild: "Nueva subcarpeta",
@@ -1203,8 +1206,7 @@ export const es: TranslationResources = {
       moveUp: "Subir",
       moveDown: "Bajar",
       remove: "Quitar carpeta",
-      removeDescription:
-        "Las conversaciones vuelven a Sin archivar. Las subcarpetas suben un nivel.",
+      removeDescription: "Las conversaciones vuelven al proyecto. Las subcarpetas suben un nivel.",
       unfiled: "Sin archivar",
       actionsFor: "Acciones de {{name}}",
       loadFailed: "No se pudieron cargar las carpetas de conversaciones.",

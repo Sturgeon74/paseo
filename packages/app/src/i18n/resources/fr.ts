@@ -1188,6 +1188,9 @@ export const fr: TranslationResources = {
   },
   sidebar: {
     conversationFolders: {
+      color: "Couleur du dossier",
+      projectRoot: "Racine du projet",
+      createAndMove: "Créer un dossier et déplacer",
       create: "Nouveau dossier de conversations",
       createAction: "Créer",
       createChild: "Nouveau sous-dossier",
@@ -1197,7 +1200,7 @@ export const fr: TranslationResources = {
       moveDown: "Descendre",
       remove: "Retirer le dossier",
       removeDescription:
-        "Les conversations reviennent dans Non classées. Les sous-dossiers remontent d’un niveau.",
+        "Les conversations retournent au projet. Les sous-dossiers remontent d’un niveau.",
       unfiled: "Non classées",
       actionsFor: "Actions pour {{name}}",
       loadFailed: "Impossible de charger les dossiers de conversations.",

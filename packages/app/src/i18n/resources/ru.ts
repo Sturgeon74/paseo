@@ -1176,6 +1176,9 @@ export const ru: TranslationResources = {
   },
   sidebar: {
     conversationFolders: {
+      color: "Цвет папки",
+      projectRoot: "Корень проекта",
+      createAndMove: "Создать папку и переместить",
       create: "Новая папка бесед",
       createAction: "Создать",
       createChild: "Новая вложенная папка",
@@ -1184,8 +1187,7 @@ export const ru: TranslationResources = {
       moveUp: "Переместить выше",
       moveDown: "Переместить ниже",
       remove: "Удалить папку",
-      removeDescription:
-        "Беседы вернутся в раздел «Без папки». Вложенные папки поднимутся на уровень выше.",
+      removeDescription: "Беседы вернутся в проект, а вложенные папки поднимутся на уровень выше.",
       unfiled: "Без папки",
       actionsFor: "Действия для {{name}}",
       loadFailed: "Не удалось загрузить папки бесед.",

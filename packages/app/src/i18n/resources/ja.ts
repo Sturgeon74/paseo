@@ -1172,6 +1172,9 @@ export const ja: TranslationResources = {
   },
   sidebar: {
     conversationFolders: {
+      color: "フォルダの色",
+      projectRoot: "プロジェクトのルート",
+      createAndMove: "フォルダを作成して移動",
       create: "新しい会話フォルダ",
       createAction: "作成",
       createChild: "新しいサブフォルダ",
@@ -1180,7 +1183,7 @@ export const ja: TranslationResources = {
       moveUp: "上へ移動",
       moveDown: "下へ移動",
       remove: "フォルダを削除",
-      removeDescription: "会話は未分類に戻ります。サブフォルダは1つ上の階層に移動します。",
+      removeDescription: "会話はプロジェクトに戻り、サブフォルダは一階層上に移動します。",
       unfiled: "未分類",
       actionsFor: "{{name}} の操作",
       loadFailed: "会話フォルダを読み込めませんでした。",

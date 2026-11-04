@@ -84,6 +84,13 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { ProjectConversationFolders } from "@/components/sidebar/conversation-folders/project-folders";
+import {
+  conversationProjectKey,
+  placeFolders,
+} from "@/components/sidebar/conversation-folders/model";
+import { conversationFolderStore } from "@/components/sidebar/conversation-folders/store";
+import { FolderDragContainer } from "@/components/sidebar/conversation-folders/drag-container";
+import { useSessionStore } from "@/stores/session-store";
 import { ProjectLeadingVisual } from "@/components/sidebar/project-leading-visual";
 import { useToast } from "@/contexts/toast-context";
 import { getForgePresentation, normalizeForge } from "@/git/forge";
@@ -261,6 +268,7 @@ interface ProjectHeaderRowProps {
   isArchiving?: boolean;
   menuController: ReturnType<typeof useContextMenu> | null;
   onRemoveProject?: () => void;
+  onCreateConversationFolder?: () => void;
   removeProjectStatus?: "idle" | "pending";
   dragHandleProps?: DraggableListDragHandleProps;
 }
@@ -413,6 +421,7 @@ function ProjectRowTrailingActions({
   isMobileBreakpoint,
   isProjectActive,
   onBeginWorkspaceSetup,
+  onCreateConversationFolder,
   onRemoveProject,
   removeProjectStatus,
 }: {
@@ -425,6 +434,7 @@ function ProjectRowTrailingActions({
   isMobileBreakpoint: boolean;
   isProjectActive: boolean;
   onBeginWorkspaceSetup: () => void;
+  onCreateConversationFolder?: () => void;
   onRemoveProject?: () => void;
   removeProjectStatus: "idle" | "pending" | "success";
 }) {
@@ -449,6 +459,7 @@ function ProjectRowTrailingActions({
             projectViewKey={projectViewKey}
             settingsTarget={settingsTarget}
             projectPath={projectPath}
+            onCreateConversationFolder={onCreateConversationFolder}
             onRemoveProject={onRemoveProject}
             removeProjectStatus={removeProjectStatus}
           />
@@ -474,6 +485,7 @@ function renderKebabTriggerIcon({ hovered }: { hovered?: boolean }) {
 }
 
 function ProjectKebabMenu({
+  onCreateConversationFolder,
   projectViewKey,
   settingsTarget,
   projectPath,
@@ -481,6 +493,7 @@ function ProjectKebabMenu({
   removeProjectStatus,
 }: {
   projectViewKey: string;
+  onCreateConversationFolder?: () => void;
   settingsTarget: { serverId: string; projectId: string } | null;
   projectPath: string;
   onRemoveProject: () => void;
@@ -501,6 +514,7 @@ function ProjectKebabMenu({
       <DropdownMenuContent align="end" width={220} sheetTitle={t("sidebar.project.actions.menu")}>
         <ProjectMenuItems
           surface="dropdown"
+          onCreateConversationFolder={onCreateConversationFolder}
           projectViewKey={projectViewKey}
           settingsTarget={settingsTarget}
           projectPath={projectPath}
@@ -528,6 +542,7 @@ function ProjectMenuItem({
 }
 
 function ProjectMenuItems({
+  onCreateConversationFolder,
   surface,
   projectViewKey,
   settingsTarget,
@@ -537,6 +552,7 @@ function ProjectMenuItems({
 }: {
   surface: ProjectMenuSurface;
   projectViewKey: string;
+  onCreateConversationFolder?: () => void;
   settingsTarget: { serverId: string; projectId: string } | null;
   projectPath: string;
   onRemoveProject: () => void;
@@ -562,6 +578,11 @@ function ProjectMenuItems({
 
   return (
     <>
+      {onCreateConversationFolder ? (
+        <ProjectMenuItem surface={surface} onSelect={onCreateConversationFolder}>
+          {t("sidebar.conversationFolders.create")}
+        </ProjectMenuItem>
+      ) : null}
       {settingsTarget ? (
         <ProjectMenuItem
           surface={surface}
@@ -682,6 +703,7 @@ function WorkspaceRowRightGroup({
                 workspaceKey={workspace.workspaceKey}
                 serverId={workspace.serverId}
                 workspaceId={workspace.workspaceId}
+                projectViewKey={workspace.projectViewKey}
                 workspaceLabels={workspace.labels}
                 onCopyPath={onCopyPath}
                 onCopyBranchName={onCopyBranchName}
@@ -869,6 +891,7 @@ function ProjectHeaderRow({
   isArchiving = false,
   menuController,
   onRemoveProject,
+  onCreateConversationFolder,
   removeProjectStatus = "idle",
   dragHandleProps,
 }: ProjectHeaderRowProps) {
@@ -973,6 +996,7 @@ function ProjectHeaderRow({
         isMobileBreakpoint={isMobileBreakpoint}
         isProjectActive={isProjectActive}
         onBeginWorkspaceSetup={handleBeginWorkspaceSetup}
+        onCreateConversationFolder={onCreateConversationFolder}
         onRemoveProject={onRemoveProject}
         removeProjectStatus={removeProjectStatus}
       />
@@ -1039,6 +1063,7 @@ function ProjectHeaderRow({
       >
         <ProjectMenuItems
           surface="context"
+          onCreateConversationFolder={onCreateConversationFolder}
           projectViewKey={project.viewKey}
           settingsTarget={settingsTarget}
           projectPath={projectPath}
@@ -1594,6 +1619,31 @@ function ProjectBlock({
   supportsPinningByServerId: ReadonlyMap<string, boolean>;
   onToggleWorkspacePin: ToggleSidebarWorkspacePin;
 }) {
+  const sessions = useSessionStore((state) => state.sessions);
+  const folderOrganization = conversationFolderStore.useStore((state) => state.organization);
+  const folderStatus = conversationFolderStore.useStore((state) => state.status);
+  const projectWorkspaces = useMemo(
+    () =>
+      project.workspaces.filter((workspace) => {
+        if (folderStatus !== "ready") return true;
+        const host = project.hosts.find((item) => item.serverId === workspace.serverId);
+        if (!host) return true;
+        const organization =
+          folderOrganization.projects[conversationProjectKey(host.serverId, host.projectId)];
+        if (!organization) return true;
+        const agents = [...(sessions[workspace.serverId]?.agents.values() ?? [])].filter(
+          (agent) =>
+            agent.workspaceId === workspace.workspaceId &&
+            !agent.archivedAt &&
+            !agent.parentAgentId,
+        );
+        const folderIds = new Set(
+          placeFolders(organization.folders).map(({ folder }) => folder.id),
+        );
+        return !agents.some((agent) => folderIds.has(organization.assignments[agent.id] ?? ""));
+      }),
+    [project, folderStatus, folderOrganization, sessions],
+  );
   const visibilityPolicy = useMemo(
     () => createWorkspaceVisibilityPolicy<SidebarWorkspacePlacement>(workspaceEntriesByKey),
     [workspaceEntriesByKey],
@@ -1605,7 +1655,7 @@ function ProjectBlock({
     canToggle: canToggleWorkspaces,
     toggleExpanded: toggleWorkspacesExpanded,
   } = useLimitedSidebarGroup({
-    items: project.workspaces,
+    items: projectWorkspaces,
     selection: selectionEnabled ? activeWorkspaceSelection : null,
     policy: visibilityPolicy,
   });
@@ -1645,29 +1695,44 @@ function ProjectBlock({
         dragHandleProps?: DraggableListDragHandleProps;
       },
     ) => {
+      const host = project.hosts.find((entry) => entry.serverId === item.serverId);
+      const agents = [...(sessions[item.serverId]?.agents.values() ?? [])].filter(
+        (agent) =>
+          agent.workspaceId === item.workspaceId && !agent.archivedAt && !agent.parentAgentId,
+      );
+      const dragItem = agents.length === 1 ? agents[0] : undefined;
       return (
-        <MemoWorkspaceRowItem
+        <FolderDragContainer
           key={item.workspaceKey}
-          workspace={item}
-          workspaceEntry={workspaceEntriesByKey.get(item.workspaceKey) ?? null}
-          hostBadge={hostBadgeByServerId.get(item.serverId) ?? null}
-          shortcutNumber={shortcutIndexByWorkspaceKey.get(item.workspaceKey) ?? null}
-          showShortcutBadge={showShortcutBadges}
-          canCopyBranchName={project.projectKind === "git"}
-          canPin={supportsPinningByServerId.get(item.serverId) === true}
-          onToggleWorkspacePin={onToggleWorkspacePin}
-          isCreating={creatingWorkspaceIds.has(item.workspaceId)}
-          selectionEnabled={selectionEnabled}
-          activeWorkspaceSelection={activeWorkspaceSelection}
-          onWorkspacePress={onWorkspacePress}
-          drag={input?.drag}
-          isDragging={input?.isDragging}
-          dragHandleProps={input?.dragHandleProps}
-        />
+          projectKey={host ? conversationProjectKey(host.serverId, host.projectId) : ""}
+          itemKind={dragItem ? "agent" : undefined}
+          itemId={dragItem?.id}
+        >
+          <MemoWorkspaceRowItem
+            key={item.workspaceKey}
+            workspace={item}
+            workspaceEntry={workspaceEntriesByKey.get(item.workspaceKey) ?? null}
+            hostBadge={hostBadgeByServerId.get(item.serverId) ?? null}
+            shortcutNumber={shortcutIndexByWorkspaceKey.get(item.workspaceKey) ?? null}
+            showShortcutBadge={showShortcutBadges}
+            canCopyBranchName={project.projectKind === "git"}
+            canPin={supportsPinningByServerId.get(item.serverId) === true}
+            onToggleWorkspacePin={onToggleWorkspacePin}
+            isCreating={creatingWorkspaceIds.has(item.workspaceId)}
+            selectionEnabled={selectionEnabled}
+            activeWorkspaceSelection={activeWorkspaceSelection}
+            onWorkspacePress={onWorkspacePress}
+            drag={input?.drag}
+            isDragging={input?.isDragging}
+            dragHandleProps={input?.dragHandleProps}
+          />
+        </FolderDragContainer>
       );
     },
     [
       project.projectKind,
+      project.hosts,
+      sessions,
       onToggleWorkspacePin,
       supportsPinningByServerId,
       activeWorkspaceSelection,
@@ -1707,6 +1772,27 @@ function ProjectBlock({
   const toast = useToast();
   const { t } = useTranslation();
   const [isRemovingProject, setIsRemovingProject] = useState(false);
+  const [folderCreateRequest, setFolderCreateRequest] = useState(0);
+  const handleFolderCreateRequest = useCallback(() => setFolderCreateRequest(0), []);
+  const handleFolderDropAtRoot = useCallback(
+    (item: { kind: "folder" | "agent"; id: string }) => {
+      const host = project.hosts[0];
+      if (!host) return;
+      void conversationFolderStore
+        .change(
+          conversationProjectKey(host.serverId, host.projectId),
+          item.kind === "folder"
+            ? { kind: "reparent", id: item.id, parentId: null }
+            : { kind: "move", agentId: item.id, folderId: null },
+        )
+        .catch(() => toast.error(t("sidebar.conversationFolders.saveFailed")));
+    },
+    [project.hosts, toast, t],
+  );
+  const createConversationFolder = useCallback(() => {
+    if (collapsed) onToggleCollapsed(project.viewKey);
+    setFolderCreateRequest((value) => value + 1);
+  }, [collapsed, onToggleCollapsed, project.viewKey]);
 
   const handleRemoveProject = useCallback(() => {
     if (isRemovingProject) {
@@ -1766,7 +1852,7 @@ function ProjectBlock({
 
   let projectChildren = null;
   if (!collapsed) {
-    if (project.workspaces.length > 0) {
+    if (projectWorkspaces.length > 0) {
       const leadingWorkspaceRow = leadingWorkspace ? renderWorkspaceRow(leadingWorkspace) : null;
       projectChildren = (
         <>
@@ -1806,7 +1892,10 @@ function ProjectBlock({
           ) : null}
         </>
       );
-    } else if (rowModel.trailingAction.kind === "new_workspace") {
+    } else if (
+      project.workspaces.length === 0 &&
+      rowModel.trailingAction.kind === "new_workspace"
+    ) {
       projectChildren = (
         <NewWorkspaceGhostRow
           project={project}
@@ -1824,31 +1913,46 @@ function ProjectBlock({
       accessibilityLabel={displayName}
       style={projectChildren ? styles.projectBlockExpanded : undefined}
     >
-      <ProjectHeaderRow
-        project={project}
-        displayName={displayName}
-        iconDataUri={iconDataUri}
-        statusBucket={aggregateStatusBucket}
-        selected={false}
-        chevron={rowModel.chevron}
-        onPress={handleToggleCollapsed}
-        worktreeTarget={
-          rowModel.trailingAction.kind === "new_workspace" ? rowModel.trailingAction.target : null
+      <FolderDragContainer
+        projectKey={
+          project.hosts[0]
+            ? conversationProjectKey(project.hosts[0].serverId, project.hosts[0].projectId)
+            : ""
         }
-        isProjectActive={active}
-        onWorkspacePress={onWorkspacePress}
-        onWorktreeCreated={onWorktreeCreated}
-        drag={drag}
-        isDragging={isDragging}
-        isArchiving={isRemovingProject}
-        menuController={null}
-        onRemoveProject={handleRemoveProject}
-        removeProjectStatus={isRemovingProject ? "pending" : "idle"}
-        dragHandleProps={dragHandleProps}
-      />
+        onDropItem={handleFolderDropAtRoot}
+      >
+        <ProjectHeaderRow
+          project={project}
+          displayName={displayName}
+          iconDataUri={iconDataUri}
+          statusBucket={aggregateStatusBucket}
+          selected={false}
+          chevron={rowModel.chevron}
+          onPress={handleToggleCollapsed}
+          worktreeTarget={
+            rowModel.trailingAction.kind === "new_workspace" ? rowModel.trailingAction.target : null
+          }
+          isProjectActive={active}
+          onWorkspacePress={onWorkspacePress}
+          onWorktreeCreated={onWorktreeCreated}
+          drag={drag}
+          isDragging={isDragging}
+          isArchiving={isRemovingProject}
+          menuController={null}
+          onRemoveProject={handleRemoveProject}
+          onCreateConversationFolder={createConversationFolder}
+          removeProjectStatus={isRemovingProject ? "pending" : "idle"}
+          dragHandleProps={dragHandleProps}
+        />
+      </FolderDragContainer>
 
       {!collapsed ? (
-        <ProjectConversationFolders project={project} onOpenConversation={onWorkspacePress} />
+        <ProjectConversationFolders
+          project={project}
+          onOpenConversation={onWorkspacePress}
+          createRequest={folderCreateRequest}
+          onCreateHandled={handleFolderCreateRequest}
+        />
       ) : null}
       {projectChildren}
     </View>

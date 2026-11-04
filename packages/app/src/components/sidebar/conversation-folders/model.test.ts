@@ -14,6 +14,32 @@ function organize(...actions: FolderAction[]) {
 }
 
 describe("conversation folders", () => {
+  it("creates a folder and files a conversation in one change", () => {
+    const state = organize({
+      kind: "create",
+      id: "one",
+      parentId: null,
+      name: "Work",
+      agentId: "chat",
+      color: "teal",
+    });
+    expect(state.assignments).toEqual({ chat: "one" });
+    expect(state.folders[0]?.color).toBe("teal");
+  });
+
+  it("moves folders within a project and refuses cycles and missing destinations", () => {
+    const state = organize(
+      { kind: "create", id: "one", parentId: null, name: "One" },
+      { kind: "create", id: "two", parentId: "one", name: "Two" },
+      { kind: "create", id: "three", parentId: null, name: "Three" },
+    );
+    expect(applyFolderAction(state, { kind: "reparent", id: "one", parentId: "two" })).toBe(state);
+    expect(applyFolderAction(state, { kind: "reparent", id: "one", parentId: "missing" })).toBe(
+      state,
+    );
+    const moved = applyFolderAction(state, { kind: "reparent", id: "two", parentId: "three" });
+    expect(moved.folders.find((folder) => folder.id === "two")?.parentId).toBe("three");
+  });
   it("allows duplicate names while targeting opaque IDs and reorders only siblings", () => {
     const state = organize(
       { kind: "create", id: "first", parentId: null, name: "Review" },

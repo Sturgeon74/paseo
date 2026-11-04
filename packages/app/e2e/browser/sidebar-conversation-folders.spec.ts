@@ -18,12 +18,6 @@ async function nameEntry(page: Page, name: string) {
   await expect(page.getByTestId("sidebar-conversation-name-input")).toHaveCount(0);
 }
 
-async function moveConversation(page: Page, row: Locator, destination: string) {
-  await row.click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Move to folder", exact: true }).click();
-  await page.getByRole("menuitem", { name: destination, exact: true }).click();
-}
-
 test("files real sidebar sessions by ID without changing their workspace or history", async ({
   page,
 }) => {
@@ -41,20 +35,25 @@ test("files real sidebar sessions by ID without changing their workspace or hist
   const worktrees = git("worktree", "list", "--porcelain");
   const branches = git("for-each-ref", "refs/heads");
   const existing = page.getByTestId(`sidebar-conversation-${serverId}-${first.agentId}`);
-  const unfiled = page.getByRole("button", { name: "Unfiled", exact: true });
-  const create = page.getByRole("button", { name: "New conversation folder", exact: true });
+  const workspace = page.getByTestId(`sidebar-workspace-row-${serverId}:${first.workspaceId}`);
+  const project = workspace.locator('xpath=ancestor::*[@role="group"][1]');
+  const create = async () => {
+    await project.getByTestId(/^sidebar-project-row-/).hover();
+    await project.getByTestId(/^sidebar-project-kebab-/).click();
+    await page.getByRole("menuitem", { name: "New conversation folder", exact: true }).click();
+  };
 
   try {
     await first.client.waitForFinish(first.agentId, 30_000);
     await gotoAppShell(page);
-    await create.click();
+    await create();
     await nameEntry(page, "Feature");
     const feature = folderRow(page, "Feature");
     await feature.click({ button: "right" });
     await page.getByRole("menuitem", { name: "New subfolder", exact: true }).click();
     await nameEntry(page, "Implementation");
 
-    await create.click();
+    await create();
     await nameEntry(page, "Review");
     await page.getByRole("button", { name: "Actions for Review" }).click();
     await page.getByRole("menuitem", { name: "Move up", exact: true }).click();
@@ -62,14 +61,15 @@ test("files real sidebar sessions by ID without changing their workspace or hist
       page.getByTestId(/^sidebar-conversation-folder-/).filter({ hasText: /^(Review|Feature)$/ }),
     ).toHaveText(["Review", "Feature"]);
 
-    await unfiled.click();
-    await moveConversation(page, existing, "Feature / Implementation");
+    await workspace.click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Move to folder", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Feature / Implementation", exact: true }).click();
+    await expect(workspace).toHaveCount(0);
     await feature.click();
     await expect(existing).toHaveCount(0);
     await expect(folderRow(page, "Implementation")).toHaveCount(0);
     await page.reload();
     await expect(feature).toHaveAttribute("aria-expanded", "false", { timeout: 30_000 });
-    await expect(unfiled).toHaveAttribute("aria-expanded", "true");
     await expect(existing).toHaveCount(0);
 
     await feature.click();
@@ -88,25 +88,11 @@ test("files real sidebar sessions by ID without changing their workspace or hist
     await nameEntry(page, "Renamed conversation");
     await expect(existing).toHaveText("Renamed conversation");
 
-    const second = await first.client.createAgent({
-      provider: "mock",
-      cwd: first.cwd,
-      workspaceId: first.workspaceId,
-      title: "New conversation",
-      modeId: "load-test",
-      model: "e2e-fast-stream",
-    });
-    const newConversation = page.getByTestId(`sidebar-conversation-${serverId}-${second.id}`);
-    await expect(newConversation).toBeVisible();
-    await moveConversation(page, newConversation, "Feature / Build");
-    await expect(newConversation).toBeVisible();
-    await first.client.archiveAgent(second.id);
-    await expect(newConversation).toHaveCount(0);
-
     await folderRow(page, "Build").click({ button: "right" });
     await page.getByRole("menuitem", { name: /^Remove folder/ }).click();
     await expect(folderRow(page, "Build")).toHaveCount(0);
-    await expect(existing).toHaveText("Renamed conversation");
+    await expect(existing).toHaveCount(0);
+    await expect(workspace).toBeVisible();
     const directory = await first.client.fetchAgents({ scope: "active" });
     expect(
       directory.entries.find(({ agent }) => agent.id === first.agentId)?.agent.workspaceId,
