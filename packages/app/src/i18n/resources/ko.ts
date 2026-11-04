@@ -1165,6 +1165,21 @@ export const ko: TranslationResources = {
     },
   },
   sidebar: {
+    conversationFolders: {
+      create: "새 대화 폴더",
+      createAction: "만들기",
+      createChild: "새 하위 폴더",
+      renameFolder: "폴더 이름 변경",
+      move: "폴더로 이동",
+      moveUp: "위로 이동",
+      moveDown: "아래로 이동",
+      remove: "폴더 제거",
+      removeDescription: "대화는 미분류로 돌아갑니다. 하위 폴더는 한 단계 위로 이동합니다.",
+      unfiled: "미분류",
+      actionsFor: "{{name}} 작업",
+      loadFailed: "대화 폴더를 불러올 수 없습니다.",
+      saveFailed: "대화 폴더를 저장할 수 없습니다.",
+    },
     statusGroupAccessibility: "{{label}} 그룹",
     statusBucket: {
       needsInput: "입력 필요",

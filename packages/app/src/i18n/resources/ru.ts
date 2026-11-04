@@ -1175,6 +1175,22 @@ export const ru: TranslationResources = {
     },
   },
   sidebar: {
+    conversationFolders: {
+      create: "Новая папка бесед",
+      createAction: "Создать",
+      createChild: "Новая вложенная папка",
+      renameFolder: "Переименовать папку",
+      move: "Переместить в папку",
+      moveUp: "Переместить выше",
+      moveDown: "Переместить ниже",
+      remove: "Удалить папку",
+      removeDescription:
+        "Беседы вернутся в раздел «Без папки». Вложенные папки поднимутся на уровень выше.",
+      unfiled: "Без папки",
+      actionsFor: "Действия для {{name}}",
+      loadFailed: "Не удалось загрузить папки бесед.",
+      saveFailed: "Не удалось сохранить папки бесед.",
+    },
     statusGroupAccessibility: "Группа «{{label}}»",
     statusBucket: {
       needsInput: "Ожидает ввода",

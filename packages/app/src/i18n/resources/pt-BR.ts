@@ -1184,6 +1184,21 @@ export const ptBR: TranslationResources = {
     },
   },
   sidebar: {
+    conversationFolders: {
+      create: "Nova pasta de conversas",
+      createAction: "Criar",
+      createChild: "Nova subpasta",
+      renameFolder: "Renomear pasta",
+      move: "Mover para uma pasta",
+      moveUp: "Mover para cima",
+      moveDown: "Mover para baixo",
+      remove: "Remover pasta",
+      removeDescription: "As conversas voltam para Sem pasta. As subpastas sobem um nível.",
+      unfiled: "Sem pasta",
+      actionsFor: "Ações para {{name}}",
+      loadFailed: "Não foi possível carregar as pastas de conversas.",
+      saveFailed: "Não foi possível salvar as pastas de conversas.",
+    },
     statusGroupAccessibility: "Grupo {{label}}",
     statusBucket: {
       needsInput: "Precisa de resposta",

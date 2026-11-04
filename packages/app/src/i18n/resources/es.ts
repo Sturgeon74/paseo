@@ -1194,6 +1194,22 @@ export const es: TranslationResources = {
     },
   },
   sidebar: {
+    conversationFolders: {
+      create: "Nueva carpeta de conversaciones",
+      createAction: "Crear",
+      createChild: "Nueva subcarpeta",
+      renameFolder: "Cambiar nombre de carpeta",
+      move: "Mover a una carpeta",
+      moveUp: "Subir",
+      moveDown: "Bajar",
+      remove: "Quitar carpeta",
+      removeDescription:
+        "Las conversaciones vuelven a Sin archivar. Las subcarpetas suben un nivel.",
+      unfiled: "Sin archivar",
+      actionsFor: "Acciones de {{name}}",
+      loadFailed: "No se pudieron cargar las carpetas de conversaciones.",
+      saveFailed: "No se pudieron guardar las carpetas de conversaciones.",
+    },
     statusGroupAccessibility: "Grupo {{label}}",
     statusBucket: {
       needsInput: "Necesita datos",

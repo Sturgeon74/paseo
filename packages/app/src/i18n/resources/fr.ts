@@ -1187,6 +1187,22 @@ export const fr: TranslationResources = {
     },
   },
   sidebar: {
+    conversationFolders: {
+      create: "Nouveau dossier de conversations",
+      createAction: "Créer",
+      createChild: "Nouveau sous-dossier",
+      renameFolder: "Renommer le dossier",
+      move: "Déplacer vers un dossier",
+      moveUp: "Monter",
+      moveDown: "Descendre",
+      remove: "Retirer le dossier",
+      removeDescription:
+        "Les conversations reviennent dans Non classées. Les sous-dossiers remontent d’un niveau.",
+      unfiled: "Non classées",
+      actionsFor: "Actions pour {{name}}",
+      loadFailed: "Impossible de charger les dossiers de conversations.",
+      saveFailed: "Impossible d’enregistrer les dossiers de conversations.",
+    },
     statusGroupAccessibility: "Groupe {{label}}",
     statusBucket: {
       needsInput: "Attend une réponse",

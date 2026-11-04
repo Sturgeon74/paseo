@@ -463,6 +463,7 @@ function AboutSection({ appVersion, appVersionText, isDesktopApp }: AboutSection
             <View style={settingsStyles.rowContent}>
               <Text style={settingsStyles.rowTitle}>{t("settings.about.appVersion")}</Text>
               <Text style={settingsStyles.rowHint}>{t("settings.about.thisDevice")}</Text>
+              <Text style={settingsStyles.rowHint}>Sturgeon74/paseo fork</Text>
             </View>
             <Text style={styles.aboutValue}>{appVersionText}</Text>
           </View>

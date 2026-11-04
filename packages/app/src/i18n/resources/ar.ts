@@ -1158,6 +1158,21 @@ export const ar: TranslationResources = {
     },
   },
   sidebar: {
+    conversationFolders: {
+      create: "مجلد محادثات جديد",
+      createAction: "إنشاء",
+      createChild: "مجلد فرعي جديد",
+      renameFolder: "إعادة تسمية المجلد",
+      move: "نقل إلى مجلد",
+      moveUp: "نقل لأعلى",
+      moveDown: "نقل لأسفل",
+      remove: "إزالة المجلد",
+      removeDescription: "تعود المحادثات إلى غير مصنّفة. تنتقل المجلدات الفرعية مستوى واحدًا لأعلى.",
+      unfiled: "غير مصنّفة",
+      actionsFor: "إجراءات {{name}}",
+      loadFailed: "تعذّر تحميل مجلدات المحادثات.",
+      saveFailed: "تعذّر حفظ مجلدات المحادثات.",
+    },
     statusGroupAccessibility: "مجموعة {{label}}",
     statusBucket: {
       needsInput: "تحتاج إدخالاً",

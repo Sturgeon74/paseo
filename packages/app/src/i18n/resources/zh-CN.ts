@@ -1150,6 +1150,21 @@ export const zhCN: TranslationResources = {
     },
   },
   sidebar: {
+    conversationFolders: {
+      create: "新建会话文件夹",
+      createAction: "创建",
+      createChild: "新建子文件夹",
+      renameFolder: "重命名文件夹",
+      move: "移至文件夹",
+      moveUp: "上移",
+      moveDown: "下移",
+      remove: "移除文件夹",
+      removeDescription: "会话将移回未归类。子文件夹将上移一级。",
+      unfiled: "未归类",
+      actionsFor: "{{name}}的操作",
+      loadFailed: "无法加载会话文件夹。",
+      saveFailed: "无法保存会话文件夹。",
+    },
     statusGroupAccessibility: "{{label}} 分组",
     statusBucket: {
       needsInput: "需要输入",

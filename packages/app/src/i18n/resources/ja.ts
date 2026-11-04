@@ -1171,6 +1171,21 @@ export const ja: TranslationResources = {
     },
   },
   sidebar: {
+    conversationFolders: {
+      create: "新しい会話フォルダ",
+      createAction: "作成",
+      createChild: "新しいサブフォルダ",
+      renameFolder: "フォルダ名を変更",
+      move: "フォルダに移動",
+      moveUp: "上へ移動",
+      moveDown: "下へ移動",
+      remove: "フォルダを削除",
+      removeDescription: "会話は未分類に戻ります。サブフォルダは1つ上の階層に移動します。",
+      unfiled: "未分類",
+      actionsFor: "{{name}} の操作",
+      loadFailed: "会話フォルダを読み込めませんでした。",
+      saveFailed: "会話フォルダを保存できませんでした。",
+    },
     statusGroupAccessibility: "{{label}} グループ",
     statusBucket: {
       needsInput: "入力待ち",

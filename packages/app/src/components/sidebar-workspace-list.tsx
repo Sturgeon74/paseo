@@ -83,6 +83,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
+import { ProjectConversationFolders } from "@/components/sidebar/conversation-folders/project-folders";
 import { ProjectLeadingVisual } from "@/components/sidebar/project-leading-visual";
 import { useToast } from "@/contexts/toast-context";
 import { getForgePresentation, normalizeForge } from "@/git/forge";
@@ -1846,6 +1847,9 @@ function ProjectBlock({
         dragHandleProps={dragHandleProps}
       />
 
+      {!collapsed ? (
+        <ProjectConversationFolders project={project} onOpenConversation={onWorkspacePress} />
+      ) : null}
       {projectChildren}
     </View>
   );

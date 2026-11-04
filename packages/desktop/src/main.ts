@@ -929,6 +929,10 @@ async function bootstrap(): Promise<void> {
 
   await app.whenReady();
 
+  if (process.platform === "darwin") {
+    app.setAboutPanelOptions({ credits: "Sturgeon74/paseo fork" });
+  }
+
   const appDistDir = getAppDistDir();
   protocol.handle(APP_SCHEME, (request) => {
     const { pathname, search, hash } = new URL(request.url);

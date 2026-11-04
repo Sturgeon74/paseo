@@ -1166,6 +1166,21 @@ export const en = {
     },
   },
   sidebar: {
+    conversationFolders: {
+      create: "New conversation folder",
+      createAction: "Create",
+      createChild: "New subfolder",
+      renameFolder: "Rename folder",
+      move: "Move to folder",
+      moveUp: "Move up",
+      moveDown: "Move down",
+      remove: "Remove folder",
+      removeDescription: "Conversations return to Unfiled. Subfolders move up one level.",
+      unfiled: "Unfiled",
+      actionsFor: "Actions for {{name}}",
+      loadFailed: "Conversation folders could not be loaded.",
+      saveFailed: "Conversation folders could not be saved.",
+    },
     statusGroupAccessibility: "{{label}} group",
     statusBucket: {
       needsInput: "Needs input",
