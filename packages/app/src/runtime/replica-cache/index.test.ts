@@ -816,6 +816,26 @@ describe("ReplicaCache", () => {
     ]);
   });
 
+  it("restores shared folder organization from the cached project after reopening", async () => {
+    const storage = new MemoryStorage();
+    const writer = createCache(storage);
+    const snapshot = directory();
+    const folders = {
+      folders: [{ id: "f03", name: "F03", parentId: null, collapsed: true }],
+      assignments: { chat: "f03" },
+      unfiledCollapsed: true,
+      revision: 4,
+    };
+    const project = snapshot.projects.get("project-1")!;
+    snapshot.projects.set("project-1", { ...project, conversationFolders: folders });
+    commitDirectory(writer, SERVER_ID, snapshot);
+    await writer.flush();
+    const reader = createCache(storage);
+    expect(
+      (await reader.readDirectory(SERVER_ID)).projects.get("project-1")?.conversationFolders,
+    ).toEqual(folders);
+  });
+
   it("reads one requested workspace and its project without scanning the directory", async () => {
     const storage = new MemoryStorage();
     const writer = createCache(storage);

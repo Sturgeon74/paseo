@@ -194,3 +194,127 @@ test("a failed worktree attempt before git init does not prevent creation afterw
   expect(created.workspace?.workspaceKind).toBe("worktree");
   expect(created.workspace?.projectId).toBe(added.project!.projectId);
 }, 30_000);
+
+test("conversation folders share between two clients, survive restart, and import only once", async () => {
+  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "paseo-folder-sync-")));
+  const paseoHomeRoot = realpathSync(mkdtempSync(path.join(os.tmpdir(), "paseo-folder-home-")));
+  cleanupPaths.add(root);
+  cleanupPaths.add(paseoHomeRoot);
+  const daemon = await createTestPaseoDaemon({ paseoHomeRoot, cleanup: false });
+  cleanupDaemons.add(daemon);
+  const mac = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
+  const ipad = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
+  cleanupClients.add(mac);
+  cleanupClients.add(ipad);
+  await Promise.all([mac.connect(), ipad.connect()]);
+  await Promise.all([mac.fetchAgents({ subscribe: {} }), ipad.fetchAgents({ subscribe: {} })]);
+  const events = ipad.observeEvents(["project.update"]);
+  await events.ready;
+  expect(ipad.getLastServerInfoMessage()?.features?.conversationFolders).toBe(true);
+  expect(ipad.getLastServerInfoMessage()?.features?.conversationFolderWorkspaces).toBe(true);
+  const added = await mac.addProject(root);
+  const projectId = added.project!.projectId;
+  const incoming = waitForProjectUpdate(
+    ipad,
+    (event) =>
+      event.kind === "upsert" &&
+      event.project.projectId === projectId &&
+      event.project.conversationFolders?.revision === 1,
+  );
+  const legacy = {
+    folders: [
+      { id: "f03", parentId: null, name: "F03", collapsed: false, color: "sky" as const },
+      { id: "review", parentId: "f03", name: "Review", collapsed: true },
+    ],
+    assignments: { chat: "review" },
+    unfiledCollapsed: true,
+  };
+  await mac.changeProjectConversationFolders(projectId, {
+    kind: "import",
+    sourceId: "mac-fixture",
+    state: legacy,
+  });
+  const received = await withTimeout({
+    promise: incoming,
+    timeoutMs: 10_000,
+    label: "folder update delivered to iPad",
+  });
+  expect(received).toMatchObject({
+    kind: "upsert",
+    project: { conversationFolders: { ...legacy, revision: 1 } },
+  });
+  await Promise.all([
+    mac.changeProjectConversationFolders(projectId, {
+      kind: "rename",
+      id: "f03",
+      name: "Feature 03",
+    }),
+    ipad.changeProjectConversationFolders(projectId, {
+      kind: "move",
+      agentId: "second",
+      folderId: "f03",
+    }),
+  ]);
+  const listed = (await ipad.listProjects()).projects.find(
+    (project) => project.projectId === projectId,
+  )!;
+  expect(listed.conversationFolders).toMatchObject({
+    revision: 3,
+    assignments: { chat: "review", second: "f03" },
+  });
+  expect(listed.conversationFolders?.folders[0]?.name).toBe("Feature 03");
+  const workspaceUpdate = waitForProjectUpdate(
+    ipad,
+    (event) =>
+      event.kind === "upsert" &&
+      event.project.projectId === projectId &&
+      event.project.conversationFolders?.workspaceAssignments?.empty === "f03",
+  );
+  await mac.changeProjectConversationFolders(projectId, {
+    kind: "moveWorkspace",
+    workspaceId: "empty",
+    folderId: "f03",
+  });
+  expect(
+    await withTimeout({
+      promise: workspaceUpdate,
+      timeoutMs: 10000,
+      label: "empty workspace filing delivered to iPad",
+    }),
+  ).toMatchObject({
+    kind: "upsert",
+    project: { conversationFolders: { workspaceAssignments: { empty: "f03" } } },
+  });
+  await ipad.changeProjectConversationFolders(projectId, { kind: "remove", id: "review" });
+  const beforeRestart = await mac.changeProjectConversationFolders(projectId, {
+    kind: "import",
+    sourceId: "mac-fixture",
+    state: legacy,
+  });
+  expect(beforeRestart.folders.map(({ id }) => id)).toEqual(["f03"]);
+  expect(beforeRestart.assignments).toEqual({ second: "f03" });
+  expect(beforeRestart.workspaceAssignments).toEqual({ empty: "f03" });
+  await events.release();
+  await Promise.all([mac.close(), ipad.close()]);
+  cleanupClients.delete(mac);
+  cleanupClients.delete(ipad);
+  await daemon.close();
+  cleanupDaemons.delete(daemon);
+  const restarted = await createTestPaseoDaemon({ paseoHomeRoot, cleanup: false });
+  cleanupDaemons.add(restarted);
+  const reopened = new DaemonClient({ url: `ws://127.0.0.1:${restarted.port}/ws` });
+  cleanupClients.add(reopened);
+  await reopened.connect();
+  await reopened.fetchAgents({ subscribe: {} });
+  expect(
+    (await reopened.listProjects()).projects.find((project) => project.projectId === projectId)
+      ?.conversationFolders,
+  ).toEqual(beforeRestart);
+  expect(
+    await reopened.changeProjectConversationFolders(projectId, {
+      kind: "import",
+      sourceId: "mac-fixture",
+      state: legacy,
+    }),
+  ).toEqual(beforeRestart);
+}, 60_000);

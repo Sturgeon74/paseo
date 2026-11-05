@@ -454,6 +454,25 @@ workspace together with its owning project.
 
 ---
 
+### Shared sidebar folders
+
+Folder structure, colors, order, collapse state, and session assignments belong to the host's
+project record. Every client connected to that host receives changes through the project directory.
+Workspace rows with no active sessions can also be filed by workspace ID. Their placement survives
+session inactivity and reopening; filing the workspace keeps the whole row together when sessions
+appear later. An explicit move back to the project root overrides older session placements.
+Projects on different hosts keep separate folder organization, even when the sidebar groups them
+under the same project name.
+
+Update the host and the Mac client before the iPad client needs the Mac's existing folders. The
+Mac imports its old local snapshot on connection; an empty device never replaces host data with
+an empty tree. Imports merge by folder ID and preserve existing host assignments on conflicts.
+The host records each import source so reopening an old local snapshot cannot resurrect folders
+that were subsequently deleted. The original local snapshot remains untouched as a recovery copy.
+
+Older hosts do not support shared folder edits. The client keeps the local recovery view and
+asks for a host update when you try to edit it. Rebuilding only the iPad does not add host support.
+
 ## 5. Workspace Registry
 
 **Path:** `$PASEO_HOME/projects/workspaces.json`

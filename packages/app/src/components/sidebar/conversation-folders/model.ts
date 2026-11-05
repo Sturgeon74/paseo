@@ -1,172 +1,15 @@
-import { z } from "zod";
-import type { Agent } from "@/stores/session-store";
-import { IDENTITY_COLOR_NAMES } from "@/styles/identity-colors";
-
-const folderSchema = z.object({
-  id: z.string().min(1),
-  parentId: z.string().min(1).nullable(),
-  name: z.string().trim().min(1).max(100),
-  collapsed: z.boolean(),
-  color: z.enum(IDENTITY_COLOR_NAMES).optional(),
-});
-
-const projectSchema = z.object({
-  folders: z.array(folderSchema),
-  assignments: z.record(z.string(), z.string()),
-  unfiledCollapsed: z.boolean(),
-});
-
-export const organizationSchema = z.object({
-  version: z.literal(1),
-  projects: z.record(z.string(), projectSchema),
-});
-
-export type ConversationFolder = z.infer<typeof folderSchema>;
-export type ProjectFolders = z.infer<typeof projectSchema>;
-export type ConversationOrganization = z.infer<typeof organizationSchema>;
-
-export const emptyProjectFolders: ProjectFolders = {
-  folders: [],
-  assignments: {},
-  unfiledCollapsed: true,
-};
-
-export type FolderAction =
-  | {
-      kind: "create";
-      id: string;
-      parentId: string | null;
-      name: string;
-      color?: ConversationFolder["color"];
-      agentId?: string;
-    }
-  | { kind: "rename"; id: string; name: string }
-  | { kind: "color"; id: string; color: NonNullable<ConversationFolder["color"]> }
-  | { kind: "reparent"; id: string; parentId: string | null }
-  | { kind: "toggle"; id: string | null }
-  | { kind: "reorder"; id: string; direction: -1 | 1 }
-  | { kind: "remove"; id: string }
-  | { kind: "move"; agentId: string; folderId: string | null };
-
-export function conversationProjectKey(serverId: string, projectId: string): string {
-  return JSON.stringify([serverId, projectId]);
-}
-
-function reparentFolder(
-  state: ProjectFolders,
-  current: ConversationFolder,
-  index: number,
-  destination: string | null,
-): ProjectFolders {
-  if (destination === current.parentId) return state;
-  const folders = [...state.folders];
-  const byId = new Map(folders.map((folder) => [folder.id, folder]));
-  let parentId = destination;
-  const visited = new Set<string>();
-  while (parentId !== null) {
-    if (parentId === current.id || visited.has(parentId)) return state;
-    visited.add(parentId);
-    const parent = byId.get(parentId);
-    if (!parent) return state;
-    parentId = parent.parentId;
-  }
-  folders[index] = { ...current, parentId: destination };
-  const targetIndex = folders.findIndex((folder) => folder.id === destination);
-  const target = folders[targetIndex];
-  if (target) folders[targetIndex] = { ...target, collapsed: false };
-  return { ...state, folders };
-}
-
-function moveConversation(
-  state: ProjectFolders,
-  action: Extract<FolderAction, { kind: "move" }>,
-): ProjectFolders {
-  if (action.folderId !== null && !state.folders.some((folder) => folder.id === action.folderId)) {
-    return state;
-  }
-  const assignments = { ...state.assignments };
-  if (action.folderId === null) {
-    delete assignments[action.agentId];
-    return { ...state, assignments };
-  }
-  return {
-    ...state,
-    folders: state.folders.map((folder) => {
-      if (folder.id === action.folderId) return { ...folder, collapsed: false };
-      return folder;
-    }),
-    assignments: { ...assignments, [action.agentId]: action.folderId },
-  };
-}
-
-export function applyFolderAction(state: ProjectFolders, action: FolderAction): ProjectFolders {
-  if (action.kind === "move") return moveConversation(state, action);
-
-  if (action.kind === "create") {
-    const folder = folderSchema.parse({ ...action, collapsed: false });
-    if (state.folders.some(({ id }) => id === folder.id)) return state;
-    if (folder.parentId !== null && !state.folders.some(({ id }) => id === folder.parentId)) {
-      return state;
-    }
-    const folders = state.folders.map((item) =>
-      item.id === folder.parentId ? { ...item, collapsed: false } : item,
-    );
-    return {
-      ...state,
-      folders: [...folders, folder],
-      assignments: action.agentId
-        ? { ...state.assignments, [action.agentId]: folder.id }
-        : state.assignments,
-    };
-  }
-
-  if (action.kind === "toggle" && action.id === null) {
-    return { ...state, unfiledCollapsed: !state.unfiledCollapsed };
-  }
-
-  const index = state.folders.findIndex((folder) => folder.id === action.id);
-  const current = state.folders[index];
-  if (!current) return state;
-  const folders = [...state.folders];
-
-  switch (action.kind) {
-    case "color":
-      folders[index] = folderSchema.parse({ ...current, color: action.color });
-      return { ...state, folders };
-    case "reparent":
-      return reparentFolder(state, current, index, action.parentId);
-    case "rename":
-      folders[index] = folderSchema.parse({ ...current, name: action.name });
-      return { ...state, folders };
-    case "toggle":
-      folders[index] = { ...current, collapsed: !current.collapsed };
-      return { ...state, folders };
-    case "reorder": {
-      const siblingIndices = folders.flatMap((folder, position) =>
-        folder.parentId === current.parentId ? [position] : [],
-      );
-      const targetIndex = siblingIndices[siblingIndices.indexOf(index) + action.direction];
-      if (targetIndex === undefined) return state;
-      const sibling = folders[targetIndex];
-      if (!sibling) return state;
-      folders[index] = sibling;
-      folders[targetIndex] = current;
-      return { ...state, folders };
-    }
-    case "remove": {
-      folders.splice(index, 1);
-      const assignments = Object.fromEntries(
-        Object.entries(state.assignments).filter(([, folderId]) => folderId !== current.id),
-      );
-      for (const [position, folder] of folders.entries()) {
-        if (folder.parentId === current.id) {
-          folders[position] = { ...folder, parentId: current.parentId };
-        }
-      }
-      return { ...state, assignments, folders };
-    }
-  }
-}
+import type { Agent, WorkspaceDescriptor } from "@/stores/session-store";
+import type { ConversationFolder, ProjectFolders } from "@getpaseo/protocol/conversation-folders";
+export {
+  applyFolderAction,
+  conversationProjectKey,
+  emptyProjectFolders,
+  organizationSchema,
+  type ConversationFolder,
+  type ProjectFolders,
+  type ConversationOrganization,
+  type FolderAction,
+} from "@getpaseo/protocol/conversation-folders";
 
 export interface FolderPlacement {
   folder: ConversationFolder;
@@ -240,11 +83,64 @@ export function groupConversations<T extends { id: string }>(
   return groups;
 }
 
+// A workspace placement survives its last active session. An explicit root placement
+// also prevents an old session assignment from pulling the workspace back into a folder.
+export function workspaceFolderId(
+  state: ProjectFolders,
+  workspaceId: string,
+): string | null | undefined {
+  if (!state.workspaceAssignments || !Object.hasOwn(state.workspaceAssignments, workspaceId))
+    return undefined;
+  const folderId = state.workspaceAssignments[workspaceId];
+  return placeFolders(state.folders).some(({ folder }) => folder.id === folderId) ? folderId : null;
+}
+
+export function folderDropAction(
+  kind: "folder" | "agent" | "workspace",
+  id: string,
+  folderId: string | null,
+): import("@getpaseo/protocol/conversation-folders").FolderAction {
+  switch (kind) {
+    case "folder":
+      return { kind: "reparent", id, parentId: folderId };
+    case "agent":
+      return { kind: "move", agentId: id, folderId };
+    case "workspace":
+      return { kind: "moveWorkspace", workspaceId: id, folderId };
+  }
+}
+
+export function selectWorkspaceFolderTargets({
+  workspace,
+  agents,
+  folders,
+}: {
+  workspace?: Pick<WorkspaceDescriptor, "id" | "name">;
+  agents: Iterable<
+    Pick<Agent, "id" | "workspaceId" | "archivedAt" | "parentAgentId" | "title" | "provider">
+  >;
+  folders: ProjectFolders;
+}): Array<{ kind: "agent" | "workspace"; id: string; title: string }> {
+  if (!workspace) return [];
+  const targets = [...agents]
+    .filter(
+      (agent) => agent.workspaceId === workspace.id && !agent.archivedAt && !agent.parentAgentId,
+    )
+    .map((agent) => ({
+      kind: "agent" as const,
+      id: agent.id,
+      title: agent.title || agent.provider,
+    }));
+  if (targets.length > 0 && workspaceFolderId(folders, workspace.id) === undefined) return targets;
+  return [{ kind: "workspace", id: workspace.id, title: workspace.name }];
+}
+
 interface ProjectConversationInput<T> {
   agents: Iterable<T>;
   visibleWorkspaces: ReadonlyMap<string, { projectViewKey: string }>;
   projectViewKey: string;
   serverId: string;
+  workspaceAssignments?: ProjectFolders["workspaceAssignments"];
 }
 
 export function selectProjectConversations<
@@ -252,10 +148,17 @@ export function selectProjectConversations<
     Agent,
     "id" | "workspaceId" | "archivedAt" | "parentAgentId" | "title" | "provider"
   >,
->({ agents, visibleWorkspaces, projectViewKey, serverId }: ProjectConversationInput<T>): T[] {
+>({
+  agents,
+  visibleWorkspaces,
+  projectViewKey,
+  serverId,
+  workspaceAssignments,
+}: ProjectConversationInput<T>): T[] {
   const result: T[] = [];
   for (const agent of agents) {
     if (!agent.workspaceId || agent.archivedAt || agent.parentAgentId) continue;
+    if (workspaceAssignments && Object.hasOwn(workspaceAssignments, agent.workspaceId)) continue;
     const workspace = visibleWorkspaces.get(`${serverId}:${agent.workspaceId}`);
     if (workspace?.projectViewKey === projectViewKey) result.push(agent);
   }

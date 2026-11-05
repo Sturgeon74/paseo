@@ -1,3 +1,4 @@
+import { FolderCommandSchema, ProjectFoldersSchema } from "./conversation-folders.js";
 import { AgentMessageSchema } from "./agent-message.js";
 import {
   HostsListRequestSchema,
@@ -1000,6 +1001,22 @@ export const ProjectIconSourceSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("automatic") }),
   z.object({ type: z.literal("upload"), data: z.string() }),
 ]);
+
+export const ProjectConversationFoldersChangeRequestSchema = z.object({
+  type: z.literal("project.conversation_folders.change.request"),
+  projectId: z.string(),
+  command: FolderCommandSchema,
+  requestId: z.string(),
+});
+export const ProjectConversationFoldersChangeResponseSchema = z.object({
+  type: z.literal("project.conversation_folders.change.response"),
+  payload: z.object({
+    requestId: z.string(),
+    projectId: z.string(),
+    state: ProjectFoldersSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
 
 export const ProjectRenameRequestSchema = z.object({
   type: z.literal("project.rename.request"),
@@ -3301,6 +3318,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ArchiveAgentRequestMessageSchema,
   CloseItemsRequestMessageSchema,
   UpdateAgentRequestMessageSchema,
+  ProjectConversationFoldersChangeRequestSchema,
   ProjectRenameRequestSchema,
   ProjectIconSetRequestSchema,
   ProjectRemoveRequestSchema,
@@ -3687,6 +3705,10 @@ export const ServerInfoStatusPayloadSchema = z
         directorySync: z.boolean().optional(),
         // COMPAT(workspaceLabels): added in v0.5.0, remove after 2027-08-14.
         workspaceLabels: z.boolean().optional(),
+        // COMPAT(conversationFolders): added in v0.15.0 fork, remove gate after 2027-05-05.
+        conversationFolders: z.boolean().optional(),
+        // COMPAT(conversationFolderWorkspaces): added in v0.15.0 fork, remove gate after 2027-05-05.
+        conversationFolderWorkspaces: z.boolean().optional(),
         // COMPAT(workspaceSetupRun): added in v0.8.0, remove gate after 2027-09-02.
         workspaceSetupRun: z.boolean().optional(),
         // COMPAT(workspaceTerminals): added in v0.8.0, remove gate after 2027-09-05.
@@ -4354,6 +4376,7 @@ export const WorkspaceProjectDescriptorPayloadSchema = z.object({
   projectKind: z.enum(["git", "non_git", "directory"]),
   // COMPAT(directorySync): sequence of this latest directory projection.
   syncSeq: z.number().int().positive().optional(),
+  conversationFolders: ProjectFoldersSchema.optional(),
 });
 
 export const FetchWorkspacesResponseMessageSchema = z.object({
@@ -7131,6 +7154,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   AgentDetachResponseMessageSchema,
   AgentRewindResponseMessageSchema,
   UpdateAgentResponseMessageSchema,
+  ProjectConversationFoldersChangeResponseSchema,
   ProjectRenameResponseSchema,
   ProjectIconSetResponseSchema,
   ProjectRemoveResponseSchema,

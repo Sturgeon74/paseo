@@ -1,3 +1,4 @@
+import { changeProjectConversationFolders } from "./conversation-folders.js";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import type { AgentMessageDelivery } from "./agent/agent-messages/index.js";
 import { AgentDirectory } from "./agent/directory.js";
@@ -2480,6 +2481,7 @@ export class Session {
 
   private dispatchWorkspaceLifecycleMessage(msg: SessionInboundMessage): Promise<void> | undefined {
     return (
+      this.dispatchConversationFolderMessage(msg) ??
       this.dispatchWorkspaceStateMessage(msg) ??
       this.dispatchWorkspaceLabelMessage(msg) ??
       this.dispatchWorkspaceSetupMessage(msg) ??
@@ -3106,6 +3108,12 @@ export class Session {
     return undefined;
   }
 
+  private dispatchConversationFolderMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    return msg.type === "project.conversation_folders.change.request"
+      ? this.handleProjectConversationFoldersChange(msg)
+      : undefined;
+  }
+
   private dispatchWorkspaceLabelMessage(msg: SessionInboundMessage): Promise<void> | undefined {
     switch (msg.type) {
       case "workspace.label.list.request":
@@ -3620,6 +3628,35 @@ export class Session {
           agentId,
           accepted: false,
           error: getErrorMessageOr(error, "Failed to update agent"),
+        },
+      });
+    }
+  }
+
+  private async handleProjectConversationFoldersChange(
+    request: Extract<
+      SessionInboundMessage,
+      { type: "project.conversation_folders.change.request" }
+    >,
+  ): Promise<void> {
+    try {
+      const state = await changeProjectConversationFolders(
+        this.projectRegistry,
+        request.projectId,
+        request.command,
+      );
+      this.emit({
+        type: "project.conversation_folders.change.response",
+        payload: { requestId: request.requestId, projectId: request.projectId, state, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "project.conversation_folders.change.response",
+        payload: {
+          requestId: request.requestId,
+          projectId: request.projectId,
+          state: null,
+          error: getErrorMessageOr(error, "Could not save conversation folders"),
         },
       });
     }
@@ -5977,6 +6014,7 @@ export class Session {
       projectCustomName: project.customName ?? null,
       projectCustomIconRevision: project.customIconRevision ?? null,
       projectIconRevision: icon.revision,
+      ...(project.conversationFolders ? { conversationFolders: project.conversationFolders } : {}),
       projectRootPath: project.rootPath,
       projectKind: project.kind,
     };

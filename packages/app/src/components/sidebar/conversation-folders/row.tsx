@@ -50,7 +50,7 @@ export function ConversationFolderRow({
       ) : null}
       {color ? <View style={[styles.colorDot, { backgroundColor: color }]} /> : null}
       <DensityIcon icon={icon} size="sm" color="foregroundMuted" />
-      <Text numberOfLines={1} style={styles.title}>
+      <Text numberOfLines={1} style={[styles.title, expanded && styles.expandedTitle]}>
         {label}
       </Text>
       {detail ? (
@@ -64,10 +64,12 @@ export function ConversationFolderRow({
     ({ hovered, pressed, open }: { hovered?: boolean; pressed: boolean; open?: boolean }) => [
       styles.row,
       Boolean(menu) && styles.rowContent,
-      { paddingStart: 8 + Math.min(depth, 8) * 18 },
+      {
+        paddingStart: 8 + Math.min(depth, 8) * 18 + (expanded === undefined && depth > 0 ? 20 : 0),
+      },
       (hovered || pressed || open) && styles.highlight,
     ],
-    [depth, menu],
+    [depth, expanded, menu],
   );
   const trigger = {
     onPress,
@@ -133,6 +135,10 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 1,
     color: theme.colors.foreground,
     fontSize: theme.fontSize.base,
+    fontWeight: "400",
+  },
+  expandedTitle: {
+    fontWeight: "500",
   },
   detail: {
     flexShrink: 1,

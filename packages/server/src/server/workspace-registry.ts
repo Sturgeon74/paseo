@@ -1,3 +1,4 @@
+import { ProjectFoldersSchema } from "@getpaseo/protocol/conversation-folders";
 import { promises as fs } from "node:fs";
 
 import type { Logger } from "pino";
@@ -22,6 +23,8 @@ const UntrustedWorkspaceSourceSchema = z.object({
 const PersistedProjectRecordSchema = z.object({
   projectId: z.string(),
   rootPath: z.string(),
+  conversationFolders: ProjectFoldersSchema.optional(),
+  conversationFolderImports: z.array(z.string()).optional(),
   kind: z.enum(["git", "non_git"]),
   displayName: z.string(),
   // COMPAT(projectKey): added in v0.2.4 on 2026-07-28; remove optional after 2027-01-28.

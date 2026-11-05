@@ -95,6 +95,7 @@ const variants = {
 };
 
 const variant = variants[appVariant] ?? variants.production;
+const iosBundleIdentifier = process.env.PASEO_IOS_BUNDLE_ID?.trim() || variant.packageId;
 const nativeReleaseVersion = getNativeReleaseVersion(pkg.version);
 
 export default {
@@ -110,10 +111,11 @@ export default {
     ios: {
       supportsTablet: true,
       infoPlist: {
+        ...(iosBundleIdentifier !== variant.packageId ? { CFBundleDisplayName: "Paseo Fork" } : {}),
         NSMicrophoneUsageDescription: "This app needs access to the microphone for voice commands.",
         ITSAppUsesNonExemptEncryption: false,
       },
-      bundleIdentifier: variant.packageId,
+      bundleIdentifier: iosBundleIdentifier,
       ...(variant.googleServiceInfoPlist
         ? { googleServicesFile: variant.googleServiceInfoPlist }
         : {}),

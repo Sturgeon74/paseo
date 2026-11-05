@@ -21,6 +21,7 @@ import {
   groupConversations,
   placeFolders,
   selectProjectConversations,
+  folderDropAction,
   type FolderAction,
   type ProjectFolders,
 } from "./model";
@@ -33,6 +34,7 @@ interface ProjectConversationFoldersProps {
   onOpenConversation?: () => void;
   createRequest?: number;
   onCreateHandled?: () => void;
+  renderWorkspaces: (serverId: string, folderId: string, depth: number) => ReactNode;
 }
 
 export function ProjectConversationFolders({
@@ -40,6 +42,7 @@ export function ProjectConversationFolders({
   onOpenConversation,
   createRequest = 0,
   onCreateHandled,
+  renderWorkspaces,
 }: ProjectConversationFoldersProps) {
   useEffect(() => {
     void conversationFolderStore.load();
@@ -60,6 +63,7 @@ export function ProjectConversationFolders({
         }
         onCreateHandled={onCreateHandled}
         onOpenConversation={onOpenConversation}
+        renderWorkspaces={renderWorkspaces}
       />
     );
   });
@@ -73,6 +77,7 @@ interface HostProjectFoldersProps {
   onOpenConversation?: () => void;
   createRequest: number;
   onCreateHandled?: () => void;
+  renderWorkspaces: ProjectConversationFoldersProps["renderWorkspaces"];
 }
 
 type NameDialog =
@@ -88,6 +93,7 @@ function HostProjectFolders({
   onOpenConversation,
   createRequest,
   onCreateHandled,
+  renderWorkspaces,
 }: HostProjectFoldersProps) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -95,6 +101,10 @@ function HostProjectFolders({
   const folders = conversationFolderStore.useStore(
     (state) => state.organization.projects[projectKey],
   );
+  const importError = conversationFolderStore.useStore((state) => state.importErrors[projectKey]);
+  useEffect(() => {
+    if (importError) toast.error(importError);
+  }, [importError, toast]);
   const online = useHostRuntimeIsConnected(serverId);
   const [dialog, setDialog] = useState<NameDialog | null>(null);
   const hosts = useHosts();
@@ -113,7 +123,11 @@ function HostProjectFolders({
     (action: FolderAction) => {
       void conversationFolderStore
         .change(projectKey, action)
-        .catch(() => toast.error(t("sidebar.conversationFolders.saveFailed")));
+        .catch((error: unknown) =>
+          toast.error(
+            error instanceof Error ? error.message : t("sidebar.conversationFolders.saveFailed"),
+          ),
+        );
     },
     [projectKey, toast, t],
   );
@@ -148,8 +162,10 @@ function HostProjectFolders({
           : { kind: "rename", id: dialog.id, name };
       try {
         await conversationFolderStore.change(projectKey, action);
-      } catch {
-        throw new Error(t("sidebar.conversationFolders.saveFailed"));
+      } catch (error) {
+        throw error instanceof Error
+          ? error
+          : new Error(t("sidebar.conversationFolders.saveFailed"));
       }
     },
     [dialog, folders, projectKey, projectViewKey, serverId, t],
@@ -173,6 +189,7 @@ function HostProjectFolders({
           onName={setDialog}
           online={online}
           hostLabel={host}
+          renderWorkspaces={renderWorkspaces}
         />
       ) : null}
       {dialog ? (
@@ -205,6 +222,7 @@ interface FolderTreeProps {
   onOpenConversation?: () => void;
   onChange: (action: FolderAction) => void;
   onName: (dialog: NameDialog) => void;
+  renderWorkspaces: ProjectConversationFoldersProps["renderWorkspaces"];
 }
 
 function FolderTree({
@@ -217,6 +235,7 @@ function FolderTree({
   onOpenConversation,
   onChange,
   onName,
+  renderWorkspaces,
 }: FolderTreeProps) {
   const { t } = useTranslation();
   const active = useRetainedPanelActive();
@@ -231,9 +250,18 @@ function FolderTree({
       visibleWorkspaces: workspaceEntriesByKey,
       projectViewKey,
       serverId,
+      workspaceAssignments: folders.workspaceAssignments,
     });
     return groupConversations(visible, folders.assignments, placements);
-  }, [agents, workspaceEntriesByKey, serverId, projectViewKey, folders.assignments, placements]);
+  }, [
+    agents,
+    workspaceEntriesByKey,
+    serverId,
+    projectViewKey,
+    folders.assignments,
+    folders.workspaceAssignments,
+    placements,
+  ]);
 
   const unfiledLabel = t("sidebar.conversationFolders.projectRoot");
   const folderChoices = useMemo(
@@ -312,7 +340,14 @@ function FolderTree({
               )!
             }
             folderChoices={folderChoices}
-            conversations={folder.collapsed ? null : renderAgents(folder.id, depth + 1)}
+            conversations={
+              folder.collapsed ? null : (
+                <>
+                  {renderAgents(folder.id, depth + 1)}
+                  {renderWorkspaces(serverId, folder.id, depth + 1)}
+                </>
+              )
+            }
           />
         ))}
       {renderAgents(null, 0, filedWorkspaces)}
@@ -492,12 +527,8 @@ function FolderBranch({
   );
   const remove = useCallback(() => onChange({ kind: "remove", id }), [id, onChange]);
   const onDropItem = useCallback(
-    (item: { kind: "folder" | "agent"; id: string }) =>
-      onChange(
-        item.kind === "folder"
-          ? { kind: "reparent", id: item.id, parentId: id }
-          : { kind: "move", agentId: item.id, folderId: id },
-      ),
+    (item: { kind: "folder" | "agent" | "workspace"; id: string }) =>
+      onChange(folderDropAction(item.kind, item.id, id)),
     [id, onChange],
   );
   const pages: MenuPageDefinition[] = [

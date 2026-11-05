@@ -87,6 +87,10 @@ import { ProjectConversationFolders } from "@/components/sidebar/conversation-fo
 import {
   conversationProjectKey,
   placeFolders,
+  workspaceFolderId,
+  folderDropAction,
+  selectWorkspaceFolderTargets,
+  emptyProjectFolders,
 } from "@/components/sidebar/conversation-folders/model";
 import { conversationFolderStore } from "@/components/sidebar/conversation-folders/store";
 import { FolderDragContainer } from "@/components/sidebar/conversation-folders/drag-container";
@@ -1631,6 +1635,8 @@ function ProjectBlock({
         const organization =
           folderOrganization.projects[conversationProjectKey(host.serverId, host.projectId)];
         if (!organization) return true;
+        const workspaceFolder = workspaceFolderId(organization, workspace.workspaceId);
+        if (workspaceFolder !== undefined) return workspaceFolder === null;
         const agents = [...(sessions[workspace.serverId]?.agents.values() ?? [])].filter(
           (agent) =>
             agent.workspaceId === workspace.workspaceId &&
@@ -1693,46 +1699,50 @@ function ProjectBlock({
         drag?: () => void;
         isDragging?: boolean;
         dragHandleProps?: DraggableListDragHandleProps;
+        folderDepth?: number;
       },
     ) => {
       const host = project.hosts.find((entry) => entry.serverId === item.serverId);
-      const agents = [...(sessions[item.serverId]?.agents.values() ?? [])].filter(
-        (agent) =>
-          agent.workspaceId === item.workspaceId && !agent.archivedAt && !agent.parentAgentId,
-      );
-      const dragItem = agents.length === 1 ? agents[0] : undefined;
+      const key = host ? conversationProjectKey(host.serverId, host.projectId) : "";
+      const targets = selectWorkspaceFolderTargets({
+        workspace: { id: item.workspaceId, name: item.name },
+        agents: sessions[item.serverId]?.agents.values() ?? [],
+        folders: folderOrganization.projects[key] ?? emptyProjectFolders,
+      });
+      const dragItem = targets.length === 1 ? targets[0] : undefined;
       return (
-        <FolderDragContainer
+        <View
           key={item.workspaceKey}
-          projectKey={host ? conversationProjectKey(host.serverId, host.projectId) : ""}
-          itemKind={dragItem ? "agent" : undefined}
-          itemId={dragItem?.id}
+          style={input?.folderDepth ? styles.folderWorkspace(input.folderDepth) : undefined}
         >
-          <MemoWorkspaceRowItem
-            key={item.workspaceKey}
-            workspace={item}
-            workspaceEntry={workspaceEntriesByKey.get(item.workspaceKey) ?? null}
-            hostBadge={hostBadgeByServerId.get(item.serverId) ?? null}
-            shortcutNumber={shortcutIndexByWorkspaceKey.get(item.workspaceKey) ?? null}
-            showShortcutBadge={showShortcutBadges}
-            canCopyBranchName={project.projectKind === "git"}
-            canPin={supportsPinningByServerId.get(item.serverId) === true}
-            onToggleWorkspacePin={onToggleWorkspacePin}
-            isCreating={creatingWorkspaceIds.has(item.workspaceId)}
-            selectionEnabled={selectionEnabled}
-            activeWorkspaceSelection={activeWorkspaceSelection}
-            onWorkspacePress={onWorkspacePress}
-            drag={input?.drag}
-            isDragging={input?.isDragging}
-            dragHandleProps={input?.dragHandleProps}
-          />
-        </FolderDragContainer>
+          <FolderDragContainer projectKey={key} itemKind={dragItem?.kind} itemId={dragItem?.id}>
+            <MemoWorkspaceRowItem
+              key={item.workspaceKey}
+              workspace={item}
+              workspaceEntry={workspaceEntriesByKey.get(item.workspaceKey) ?? null}
+              hostBadge={hostBadgeByServerId.get(item.serverId) ?? null}
+              shortcutNumber={shortcutIndexByWorkspaceKey.get(item.workspaceKey) ?? null}
+              showShortcutBadge={showShortcutBadges}
+              canCopyBranchName={project.projectKind === "git"}
+              canPin={supportsPinningByServerId.get(item.serverId) === true}
+              onToggleWorkspacePin={onToggleWorkspacePin}
+              isCreating={creatingWorkspaceIds.has(item.workspaceId)}
+              selectionEnabled={selectionEnabled}
+              activeWorkspaceSelection={activeWorkspaceSelection}
+              onWorkspacePress={onWorkspacePress}
+              drag={input?.drag}
+              isDragging={input?.isDragging}
+              dragHandleProps={input?.dragHandleProps}
+            />
+          </FolderDragContainer>
+        </View>
       );
     },
     [
       project.projectKind,
       project.hosts,
       sessions,
+      folderOrganization,
       onToggleWorkspacePin,
       supportsPinningByServerId,
       activeWorkspaceSelection,
@@ -1744,6 +1754,24 @@ function ProjectBlock({
       showShortcutBadges,
       workspaceEntriesByKey,
     ],
+  );
+
+  const renderFolderWorkspaces = useCallback(
+    (serverId: string, folderId: string, depth: number) => {
+      const host = project.hosts.find((entry) => entry.serverId === serverId);
+      if (!host) return null;
+      const organization =
+        folderOrganization.projects[conversationProjectKey(serverId, host.projectId)];
+      if (!organization) return null;
+      return project.workspaces
+        .filter(
+          (item) =>
+            item.serverId === serverId &&
+            workspaceFolderId(organization, item.workspaceId) === folderId,
+        )
+        .map((item) => renderWorkspaceRow(item, { folderDepth: depth }));
+    },
+    [project.hosts, project.workspaces, folderOrganization, renderWorkspaceRow],
   );
 
   const renderWorkspace = useCallback(
@@ -1775,17 +1803,19 @@ function ProjectBlock({
   const [folderCreateRequest, setFolderCreateRequest] = useState(0);
   const handleFolderCreateRequest = useCallback(() => setFolderCreateRequest(0), []);
   const handleFolderDropAtRoot = useCallback(
-    (item: { kind: "folder" | "agent"; id: string }) => {
+    (item: { kind: "folder" | "agent" | "workspace"; id: string }) => {
       const host = project.hosts[0];
       if (!host) return;
       void conversationFolderStore
         .change(
           conversationProjectKey(host.serverId, host.projectId),
-          item.kind === "folder"
-            ? { kind: "reparent", id: item.id, parentId: null }
-            : { kind: "move", agentId: item.id, folderId: null },
+          folderDropAction(item.kind, item.id, null),
         )
-        .catch(() => toast.error(t("sidebar.conversationFolders.saveFailed")));
+        .catch((error: unknown) =>
+          toast.error(
+            error instanceof Error ? error.message : t("sidebar.conversationFolders.saveFailed"),
+          ),
+        );
     },
     [project.hosts, toast, t],
   );
@@ -1952,6 +1982,7 @@ function ProjectBlock({
           onOpenConversation={onWorkspacePress}
           createRequest={folderCreateRequest}
           onCreateHandled={handleFolderCreateRequest}
+          renderWorkspaces={renderFolderWorkspaces}
         />
       ) : null}
       {projectChildren}
@@ -2682,6 +2713,7 @@ function ProjectModeList({
 }
 
 const styles = StyleSheet.create((theme) => ({
+  folderWorkspace: (depth: number) => ({ paddingStart: depth * 18 + 20 }),
   container: {
     flex: 1,
   },

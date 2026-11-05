@@ -6,6 +6,9 @@ import {
   groupConversations,
   placeFolders,
   selectProjectConversations,
+  selectWorkspaceFolderTargets,
+  workspaceFolderId,
+  folderDropAction,
   type FolderAction,
 } from "./model";
 
@@ -14,6 +17,70 @@ function organize(...actions: FolderAction[]) {
 }
 
 describe("conversation folders", () => {
+  it("offers workspace filing when there is no active session and retains it when a session appears", () => {
+    const workspace = { id: "workspace", name: "F03 review" };
+    const folders = organize({ kind: "create", id: "f03", name: "F03", parentId: null });
+    const archived = {
+      id: "old",
+      workspaceId: workspace.id,
+      title: "Review",
+      provider: "codex",
+      archivedAt: new Date(0),
+      parentAgentId: null,
+    };
+    const target = [{ kind: "workspace", id: workspace.id, title: workspace.name }];
+    expect(selectWorkspaceFolderTargets({ workspace, agents: [archived], folders })).toEqual(
+      target,
+    );
+    const filed = applyFolderAction(folders, folderDropAction("workspace", workspace.id, "f03"));
+    expect(workspaceFolderId(filed, workspace.id)).toBe("f03");
+    const active = { ...archived, id: "new", archivedAt: null };
+    expect(selectWorkspaceFolderTargets({ workspace, agents: [active], folders: filed })).toEqual(
+      target,
+    );
+    expect(
+      selectProjectConversations({
+        agents: [active],
+        visibleWorkspaces: new Map([["host:workspace", { projectViewKey: "project" }]]),
+        projectViewKey: "project",
+        serverId: "host",
+        workspaceAssignments: filed.workspaceAssignments,
+      }),
+    ).toEqual([]);
+    expect(selectWorkspaceFolderTargets({ workspace, agents: [active], folders })).toEqual([
+      { kind: "agent", id: "new", title: "Review" },
+    ]);
+  });
+
+  it("creates and files an empty workspace and explicitly returns it to the project root", () => {
+    const state = organize({
+      kind: "create",
+      id: "f03",
+      name: "F03",
+      parentId: null,
+      workspaceId: "empty",
+    });
+    expect(state.workspaceAssignments).toEqual({ empty: "f03" });
+    expect(
+      applyFolderAction(state, {
+        kind: "moveWorkspace",
+        workspaceId: "empty",
+        folderId: "missing",
+      }),
+    ).toBe(state);
+    const root = applyFolderAction(state, {
+      kind: "moveWorkspace",
+      workspaceId: "empty",
+      folderId: null,
+    });
+    expect(root.workspaceAssignments).toEqual({ empty: null });
+    expect(workspaceFolderId(root, "empty")).toBeNull();
+    expect(workspaceFolderId(root, "other")).toBeUndefined();
+    expect(applyFolderAction(state, { kind: "remove", id: "f03" }).workspaceAssignments).toEqual({
+      empty: null,
+    });
+  });
+
   it("creates a folder and files a conversation in one change", () => {
     const state = organize({
       kind: "create",

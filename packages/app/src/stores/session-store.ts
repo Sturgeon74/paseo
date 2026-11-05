@@ -1,3 +1,4 @@
+import type { ProjectFolders } from "@getpaseo/protocol/conversation-folders";
 import equal from "fast-deep-equal";
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
@@ -178,6 +179,7 @@ export function normalizeWorkspaceDescriptor(
 }
 
 export interface ProjectDescriptor {
+  conversationFolders?: ProjectFolders;
   projectId: string;
   projectKey?: string | null;
   projectDisplayName: string;
@@ -193,6 +195,7 @@ export function normalizeProjectDescriptor(
 ): ProjectDescriptor {
   return {
     projectId: payload.projectId,
+    ...(payload.conversationFolders ? { conversationFolders: payload.conversationFolders } : {}),
     projectKey: payload.projectKey ?? null,
     projectDisplayName: payload.projectDisplayName,
     projectCustomName: payload.projectCustomName ?? null,

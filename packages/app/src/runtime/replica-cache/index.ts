@@ -1,3 +1,4 @@
+import { ProjectFoldersSchema } from "@getpaseo/protocol/conversation-folders";
 import { findMountedWindowStart } from "@/agent-stream/history-window";
 import { z } from "zod";
 import {
@@ -331,6 +332,7 @@ const StoredWorkspaceSchema = z.strictObject({
 });
 
 const StoredProjectSchema = z.strictObject({
+  conversationFolders: ProjectFoldersSchema.optional(),
   projectId: z.string(),
   projectKey: z.string().optional(),
   projectDisplayName: z.string(),
@@ -741,6 +743,7 @@ function serializeWorkspace(workspace: WorkspaceDescriptor): StoredWorkspace {
 
 function serializeProject(project: ProjectDescriptor): StoredProject {
   return {
+    ...(project.conversationFolders ? { conversationFolders: project.conversationFolders } : {}),
     projectId: project.projectId,
     ...(project.projectKey ? { projectKey: project.projectKey } : {}),
     projectDisplayName: project.projectDisplayName,

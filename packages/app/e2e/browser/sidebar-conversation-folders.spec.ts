@@ -5,12 +5,64 @@ import { gotoAppShell } from "../support/helpers/app";
 import { seedMockAgentWorkspace } from "../support/helpers/mock-agent";
 import { getServerId } from "../support/helpers/server-id";
 import { expectWorkspaceTabVisible } from "../support/helpers/archive-tab";
+import { seedWorkspace } from "../support/helpers/seed-client";
 
 function folderRow(page: Page, name: string): Locator {
   return page
     .getByRole("button", { name, exact: true })
     .and(page.locator('[data-testid^="sidebar-conversation-folder-"]'));
 }
+
+test("files a workspace without active sessions and keeps its move action after reload", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const seeded = await seedWorkspace({
+    repoPrefix: "conversation-empty-",
+    title: "F03 inactive review",
+  });
+  const serverId = getServerId();
+  const workspace = page.getByTestId(`sidebar-workspace-row-${serverId}:${seeded.workspaceId}`);
+  const kebab = page.getByTestId(`sidebar-workspace-kebab-${serverId}:${seeded.workspaceId}`);
+  try {
+    await page.setViewportSize({ width: 1180, height: 900 });
+    await gotoAppShell(page);
+    await expect(workspace).toBeVisible();
+    await workspace.hover();
+    await kebab.click();
+    await page.getByRole("menuitem", { name: "Create folder and move", exact: true }).click();
+    await nameEntry(page, "F03");
+    const folder = folderRow(page, "F03");
+    await expect(folder).toBeVisible();
+    await expect(workspace).toHaveCount(1);
+    await expect(workspace).toBeVisible();
+    expect((await workspace.boundingBox())!.x).toBeGreaterThan(
+      (await folder.boundingBox())!.x + 18,
+    );
+    await page.reload();
+    await expect(folder).toBeVisible();
+    await expect(workspace).toBeVisible();
+    await folder.click();
+    await expect(workspace).toHaveCount(0);
+    await folder.click();
+    await expect(workspace).toBeVisible();
+    await workspace.hover();
+    await kebab.click();
+    await page.getByRole("menuitem", { name: "Move to folder", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Project root", exact: true }).click();
+    await expect(workspace).toBeVisible();
+    await folder.click();
+    await expect(workspace).toBeVisible();
+    await workspace.hover();
+    await kebab.click();
+    await page.getByRole("menuitem", { name: "Move to folder", exact: true }).click();
+    await page.getByRole("menuitem", { name: "F03", exact: true }).click();
+    await expect(workspace).toBeVisible();
+    await page.screenshot({ path: "/private/tmp/paseo-empty-workspace-folder.png" });
+  } finally {
+    await seeded.cleanup();
+  }
+});
 
 async function nameEntry(page: Page, name: string) {
   await page.getByTestId("sidebar-conversation-name-input").fill(name);

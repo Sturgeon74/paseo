@@ -43,7 +43,7 @@ export function FolderDragContainer({
         const value = data as { projectKey?: unknown; kind?: unknown; id?: unknown };
         if (
           value.projectKey === projectKey &&
-          (value.kind === "agent" || value.kind === "folder") &&
+          (value.kind === "agent" || value.kind === "folder" || value.kind === "workspace") &&
           typeof value.id === "string"
         ) {
           onDropItem({ kind: value.kind, id: value.id });

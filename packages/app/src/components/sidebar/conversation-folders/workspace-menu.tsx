@@ -6,7 +6,12 @@ import { DropdownMenuSubTrigger, type MenuPageDefinition } from "@/components/ui
 import { useToast } from "@/contexts/toast-context";
 import { useSessionStore } from "@/stores/session-store";
 import { deriveIdentityColorName, IDENTITY_COLOR_NAMES } from "@/styles/identity-colors";
-import { conversationProjectKey, emptyProjectFolders, placeFolders } from "./model";
+import {
+  conversationProjectKey,
+  emptyProjectFolders,
+  placeFolders,
+  selectWorkspaceFolderTargets,
+} from "./model";
 import { conversationFolderStore } from "./store";
 
 export function useWorkspaceConversationFolderMenu(
@@ -28,23 +33,42 @@ export function useWorkspaceConversationFolderMenu(
   useEffect(() => {
     void conversationFolderStore.load();
   }, []);
-  const agents = useMemo(
-    () =>
-      [...(session?.agents.values() ?? [])].filter(
-        (agent) => agent.workspaceId === workspaceId && !agent.archivedAt && !agent.parentAgentId,
-      ),
-    [session?.agents, workspaceId],
-  );
-  const agent = agents.find((item) => item.id === creatingAgentId);
   const folders = organization ?? emptyProjectFolders;
-  const choices = useMemo(() => placeFolders(folders.folders), [folders.folders]);
+  const targets = useMemo(
+    () =>
+      selectWorkspaceFolderTargets({
+        workspace,
+        agents: session?.agents.values() ?? [],
+        folders,
+      }),
+    [workspace, session?.agents, folders],
+  );
+  const agent = targets.find((item) => item.id === creatingAgentId);
+  const choices = useMemo(
+    () => [
+      { folder: { id: null }, path: t("sidebar.conversationFolders.projectRoot") },
+      ...placeFolders(folders.folders),
+    ],
+    [folders.folders, t],
+  );
   const move = useCallback(
-    (agentId: string, folderId: string) => {
+    (agentId: string, folderId: string | null) => {
+      const target = targets.find((item) => item.id === agentId);
+      if (!target) return;
       void conversationFolderStore
-        .change(projectKey, { kind: "move", agentId, folderId })
-        .catch(() => toast.error(t("sidebar.conversationFolders.saveFailed")));
+        .change(
+          projectKey,
+          target.kind === "workspace"
+            ? { kind: "moveWorkspace", workspaceId: target.id, folderId }
+            : { kind: "move", agentId, folderId },
+        )
+        .catch((error: unknown) =>
+          toast.error(
+            error instanceof Error ? error.message : t("sidebar.conversationFolders.saveFailed"),
+          ),
+        );
     },
-    [projectKey, toast, t],
+    [projectKey, targets, toast, t],
   );
   const open = useCallback((id: string) => setCreatingAgentId(id), []);
   const close = useCallback(() => setCreatingAgentId(null), []);
@@ -61,45 +85,45 @@ export function useWorkspaceConversationFolderMenu(
         id: crypto.randomUUID(),
         name,
         parentId: null,
-        agentId: agent.id,
+        ...(agent.kind === "workspace" ? { workspaceId: agent.id } : { agentId: agent.id }),
         color,
       });
     },
     [agent, folders, projectKey, projectViewKey],
   );
   const pages: MenuPageDefinition[] =
-    agents.length > 0
+    targets.length > 0
       ? [
           {
             id: "workspace-conversation-folder",
             title: t("sidebar.conversationFolders.move"),
             content:
-              agents.length === 1
+              targets.length === 1
                 ? choices.map(({ folder, path }) => (
                     <WorkspaceFolderDestination
-                      key={folder.id}
+                      key={folder.id ?? "root"}
                       id={folder.id}
-                      agentId={agents[0]!.id}
+                      agentId={targets[0]!.id}
                       path={path}
                       onMove={move}
                     />
                   ))
-                : agents.map((entry) => (
+                : targets.map((entry) => (
                     <DropdownMenuSubTrigger
                       key={entry.id}
                       id={`workspace-conversation-folder-${entry.id}`}
                     >
-                      {entry.title || entry.provider}
+                      {entry.title}
                     </DropdownMenuSubTrigger>
                   )),
           },
-          ...(agents.length > 1
-            ? agents.map((entry) => ({
+          ...(targets.length > 1
+            ? targets.map((entry) => ({
                 id: `workspace-conversation-folder-${entry.id}`,
-                title: entry.title || entry.provider,
+                title: entry.title,
                 content: choices.map(({ folder, path }) => (
                   <WorkspaceFolderDestination
-                    key={folder.id}
+                    key={folder.id ?? "root"}
                     id={folder.id}
                     agentId={entry.id}
                     path={path}
@@ -108,16 +132,16 @@ export function useWorkspaceConversationFolderMenu(
                 )),
               }))
             : []),
-          ...(agents.length > 1
+          ...(targets.length > 1
             ? [
                 {
                   id: "workspace-conversation-create",
                   title: t("sidebar.conversationFolders.createAndMove"),
-                  content: agents.map((entry) => (
+                  content: targets.map((entry) => (
                     <WorkspaceCreateForAgent
                       key={entry.id}
                       id={entry.id}
-                      title={entry.title || entry.provider}
+                      title={entry.title}
                       onOpen={open}
                     />
                   )),
@@ -127,14 +151,17 @@ export function useWorkspaceConversationFolderMenu(
         ]
       : [];
   const items =
-    agents.length > 0 && status === "ready" ? (
+    targets.length > 0 && status === "ready" ? (
       <>
-        <DropdownMenuSubTrigger id="workspace-conversation-folder" disabled={choices.length === 0}>
+        <DropdownMenuSubTrigger
+          id="workspace-conversation-folder"
+          disabled={folders.folders.length === 0}
+        >
           {t("sidebar.conversationFolders.move")}
         </DropdownMenuSubTrigger>
-        {agents.length === 1 ? (
+        {targets.length === 1 ? (
           <WorkspaceCreateForAgent
-            id={agents[0]!.id}
+            id={targets[0]!.id}
             title={t("sidebar.conversationFolders.createAndMove")}
             onOpen={open}
           />
@@ -167,10 +194,10 @@ function WorkspaceFolderDestination({
   onMove,
   agentId,
 }: {
-  id: string;
+  id: string | null;
   agentId: string;
   path: string;
-  onMove: (agentId: string, id: string) => void;
+  onMove: (agentId: string, id: string | null) => void;
 }) {
   const select = useCallback(() => onMove(agentId, id), [agentId, id, onMove]);
   return <ContextMenuItem onSelect={select}>{path}</ContextMenuItem>;

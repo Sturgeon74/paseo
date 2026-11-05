@@ -1,3 +1,4 @@
+import type { FolderCommand, ProjectFolders } from "@getpaseo/protocol/conversation-folders";
 import {
   ChunkedTransport,
   ChunkedTransportProtocolError,
@@ -3422,6 +3423,21 @@ export class DaemonClient {
     if (!payload.accepted) {
       throw new Error(payload.error ?? "updateAgent rejected");
     }
+  }
+
+  async changeProjectConversationFolders(
+    projectId: string,
+    command: FolderCommand,
+  ): Promise<ProjectFolders> {
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"project.conversation_folders.change.response">(
+        {
+          message: { type: "project.conversation_folders.change.request", projectId, command },
+        },
+      );
+    if (!payload.state || payload.error)
+      throw new Error(payload.error ?? "Could not save conversation folders");
+    return payload.state;
   }
 
   async renameProject(
