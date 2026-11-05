@@ -13,6 +13,43 @@ function folderRow(page: Page, name: string): Locator {
     .and(page.locator('[data-testid^="sidebar-conversation-folder-"]'));
 }
 
+test("keeps a filed archived chat with its name and history after reopening", async ({ page }) => {
+  test.setTimeout(120_000);
+  const seeded = await seedMockAgentWorkspace({
+    repoPrefix: "archived-folder-",
+    title: "Saved review",
+    initialPrompt: "Remember this review",
+  });
+  const serverId = getServerId();
+  const workspace = page.getByTestId(`sidebar-workspace-row-${serverId}:${seeded.workspaceId}`);
+  const chat = page.getByTestId(`sidebar-conversation-${serverId}-${seeded.agentId}`);
+  try {
+    await seeded.client.waitForFinish(seeded.agentId, 30000);
+    await gotoAppShell(page);
+    const project = workspace.locator('xpath=ancestor::*[@role="group"][1]');
+    await project.getByTestId(/^sidebar-project-row-/).hover();
+    await project.getByTestId(/^sidebar-project-kebab-/).click();
+    await page.getByRole("menuitem", { name: "New conversation folder", exact: true }).click();
+    await nameEntry(page, "F03");
+    await workspace.click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Move to folder", exact: true }).click();
+    await page.getByRole("menuitem", { name: "F03", exact: true }).click();
+    await expect(chat).toHaveText("Saved review");
+    await seeded.client.archiveAgent(seeded.agentId);
+    await expect(chat).toHaveText("Saved review");
+    await expect(workspace).toHaveCount(0);
+    await page.reload();
+    await expect(chat).toHaveText("Saved review");
+    await chat.click();
+    await expect(page.getByText("This agent is archived", { exact: true })).toBeVisible();
+    expect((await seeded.client.archiveWorkspace(seeded.workspaceId)).error).toBeNull();
+    await page.reload();
+    await expect(chat).toHaveText("Saved review");
+  } finally {
+    await seeded.cleanup();
+  }
+});
+
 test("files a workspace without active sessions and keeps its move action after reload", async ({
   page,
 }) => {

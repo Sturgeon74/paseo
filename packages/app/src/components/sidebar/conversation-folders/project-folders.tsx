@@ -35,6 +35,7 @@ interface ProjectConversationFoldersProps {
   createRequest?: number;
   onCreateHandled?: () => void;
   renderWorkspaces: (serverId: string, folderId: string, depth: number) => ReactNode;
+  archivedAgents: Agent[];
 }
 
 export function ProjectConversationFolders({
@@ -43,6 +44,7 @@ export function ProjectConversationFolders({
   createRequest = 0,
   onCreateHandled,
   renderWorkspaces,
+  archivedAgents,
 }: ProjectConversationFoldersProps) {
   useEffect(() => {
     void conversationFolderStore.load();
@@ -64,6 +66,7 @@ export function ProjectConversationFolders({
         onCreateHandled={onCreateHandled}
         onOpenConversation={onOpenConversation}
         renderWorkspaces={renderWorkspaces}
+        archivedAgents={archivedAgents.filter((agent) => agent.serverId === serverId)}
       />
     );
   });
@@ -78,6 +81,7 @@ interface HostProjectFoldersProps {
   createRequest: number;
   onCreateHandled?: () => void;
   renderWorkspaces: ProjectConversationFoldersProps["renderWorkspaces"];
+  archivedAgents: Agent[];
 }
 
 type NameDialog =
@@ -94,6 +98,7 @@ function HostProjectFolders({
   createRequest,
   onCreateHandled,
   renderWorkspaces,
+  archivedAgents,
 }: HostProjectFoldersProps) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -190,6 +195,7 @@ function HostProjectFolders({
           online={online}
           hostLabel={host}
           renderWorkspaces={renderWorkspaces}
+          archivedAgents={archivedAgents}
         />
       ) : null}
       {dialog ? (
@@ -223,6 +229,7 @@ interface FolderTreeProps {
   onChange: (action: FolderAction) => void;
   onName: (dialog: NameDialog) => void;
   renderWorkspaces: ProjectConversationFoldersProps["renderWorkspaces"];
+  archivedAgents: Agent[];
 }
 
 function FolderTree({
@@ -236,6 +243,7 @@ function FolderTree({
   onChange,
   onName,
   renderWorkspaces,
+  archivedAgents,
 }: FolderTreeProps) {
   const { t } = useTranslation();
   const active = useRetainedPanelActive();
@@ -252,7 +260,20 @@ function FolderTree({
       serverId,
       workspaceAssignments: folders.workspaceAssignments,
     });
-    return groupConversations(visible, folders.assignments, placements);
+    const archived = archivedAgents.filter((agent) => !agent.parentAgentId);
+    const assignments = { ...folders.assignments };
+    for (const agent of archived) {
+      if (
+        agent.workspaceId &&
+        folders.workspaceAssignments &&
+        Object.hasOwn(folders.workspaceAssignments, agent.workspaceId)
+      ) {
+        const workspaceFolder = folders.workspaceAssignments[agent.workspaceId];
+        if (workspaceFolder) assignments[agent.id] = workspaceFolder;
+        else delete assignments[agent.id];
+      }
+    }
+    return groupConversations([...visible, ...archived], assignments, placements);
   }, [
     agents,
     workspaceEntriesByKey,
@@ -260,6 +281,7 @@ function FolderTree({
     projectViewKey,
     folders.assignments,
     folders.workspaceAssignments,
+    archivedAgents,
     placements,
   ]);
 
@@ -275,13 +297,17 @@ function FolderTree({
   const filedWorkspaces = useMemo(
     () =>
       new Set(
-        [...groups.entries()].flatMap(([folderId, entries]) =>
-          folderId === null
-            ? []
-            : entries.flatMap((agent) => (agent.workspaceId ? [agent.workspaceId] : [])),
-        ),
+        [...groups.entries()]
+          .flatMap(([folderId, entries]) =>
+            folderId === null
+              ? []
+              : entries.flatMap((agent) => (agent.workspaceId ? [agent.workspaceId] : [])),
+          )
+          .concat(
+            archivedAgents.flatMap((agent) => (agent.workspaceId ? [agent.workspaceId] : [])),
+          ),
       ),
-    [groups],
+    [groups, archivedAgents],
   );
 
   function renderAgents(folderId: string | null, depth: number, workspaceFilter?: Set<string>) {

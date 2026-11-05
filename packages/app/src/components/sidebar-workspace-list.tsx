@@ -1,3 +1,5 @@
+import { useFetchQueries } from "@/data/query";
+import { normalizeAgentSnapshot } from "@/utils/agent-snapshots";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import {
   View,
@@ -1626,6 +1628,27 @@ function ProjectBlock({
   const sessions = useSessionStore((state) => state.sessions);
   const folderOrganization = conversationFolderStore.useStore((state) => state.organization);
   const folderStatus = conversationFolderStore.useStore((state) => state.status);
+  const archivedQueries = useFetchQueries(
+    project.hosts.flatMap(({ serverId, projectId }) => {
+      const session = sessions[serverId];
+      const organization = folderOrganization.projects[conversationProjectKey(serverId, projectId)];
+      return Object.keys(organization?.assignments ?? {})
+        .filter((id) => !session?.agents.has(id))
+        .map((id) => ({
+          queryKey: ["sidebar-folder-history", serverId, id, session?.clientGeneration],
+          enabled: !collapsed && Boolean(session?.client?.isConnected),
+          queryFn: async () => {
+            const result = await session!.client!.fetchAgent(id);
+            return result ? normalizeAgentSnapshot(result.agent, serverId) : null;
+          },
+          dataShape: "value" as const,
+          staleTimeMs: 30_000,
+        }));
+    }),
+  );
+  const archivedAgents = archivedQueries.flatMap((result) =>
+    result.data?.archivedAt ? [result.data] : [],
+  );
   const projectWorkspaces = useMemo(
     () =>
       project.workspaces.filter((workspace) => {
@@ -1636,6 +1659,13 @@ function ProjectBlock({
           folderOrganization.projects[conversationProjectKey(host.serverId, host.projectId)];
         if (!organization) return true;
         const workspaceFolder = workspaceFolderId(organization, workspace.workspaceId);
+        if (
+          archivedAgents.some(
+            (agent) =>
+              agent.serverId === workspace.serverId && agent.workspaceId === workspace.workspaceId,
+          )
+        )
+          return false;
         if (workspaceFolder !== undefined) return workspaceFolder === null;
         const agents = [...(sessions[workspace.serverId]?.agents.values() ?? [])].filter(
           (agent) =>
@@ -1648,7 +1678,7 @@ function ProjectBlock({
         );
         return !agents.some((agent) => folderIds.has(organization.assignments[agent.id] ?? ""));
       }),
-    [project, folderStatus, folderOrganization, sessions],
+    [project, folderStatus, folderOrganization, sessions, archivedAgents],
   );
   const visibilityPolicy = useMemo(
     () => createWorkspaceVisibilityPolicy<SidebarWorkspacePlacement>(workspaceEntriesByKey),
@@ -1767,11 +1797,14 @@ function ProjectBlock({
         .filter(
           (item) =>
             item.serverId === serverId &&
+            !archivedAgents.some(
+              (agent) => agent.serverId === serverId && agent.workspaceId === item.workspaceId,
+            ) &&
             workspaceFolderId(organization, item.workspaceId) === folderId,
         )
         .map((item) => renderWorkspaceRow(item, { folderDepth: depth }));
     },
-    [project.hosts, project.workspaces, folderOrganization, renderWorkspaceRow],
+    [project.hosts, project.workspaces, folderOrganization, renderWorkspaceRow, archivedAgents],
   );
 
   const renderWorkspace = useCallback(
@@ -1983,6 +2016,7 @@ function ProjectBlock({
           createRequest={folderCreateRequest}
           onCreateHandled={handleFolderCreateRequest}
           renderWorkspaces={renderFolderWorkspaces}
+          archivedAgents={archivedAgents}
         />
       ) : null}
       {projectChildren}
