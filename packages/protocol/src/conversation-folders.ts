@@ -7,6 +7,8 @@ export const ConversationFolderSchema = z.object({
   name: z.string().min(1).max(100),
   collapsed: z.boolean(),
   color: z.enum(WORKSPACE_LABEL_COLORS).optional(),
+  // COMPAT(conversationFolderCreatedAt): optional for existing host records.
+  createdAt: z.string().datetime().optional(),
 });
 
 export const ProjectFoldersSchema = z.object({
@@ -170,7 +172,7 @@ function createFolder(
   );
   return {
     ...state,
-    folders: [...folders, folder],
+    folders: [...folders, { ...folder, createdAt: new Date().toISOString() }],
     assignments: action.agentId
       ? { ...state.assignments, [action.agentId]: folder.id }
       : state.assignments,

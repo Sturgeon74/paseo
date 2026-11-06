@@ -201,7 +201,16 @@ export interface PaseoWorkspaceHandle {
 
 export interface PaseoProjectActions {
   list(options?: PaseoProjectListOptions): Promise<PaseoProjectListResult>;
+  getConversationFolders(projectId: string): Promise<{ supported: boolean; folders: PaseoConversationFolder[] }>;
+  assignConversationToFolder(projectId: string, agentId: string, folderId: string | null): Promise<void>;
   subscribe(handler: PaseoProjectUpdateHandler): () => void;
+}
+
+export interface PaseoConversationFolder {
+  id: string;
+  parentId: string | null;
+  name: string;
+  createdAt?: string;
 }
 
 export interface PaseoWorkspaceActions {
@@ -720,6 +729,18 @@ export function createPaseoApi(
     return { ...(await subscription.ready), subscription };
   }
 
+  const getConversationFolders: PaseoProjectActions["getConversationFolders"] = async (projectId) => {
+    if (daemonClient.getLastServerInfoMessage()?.features?.conversationFolders !== true)
+      return { supported: false, folders: [] };
+    const result = await daemonClient.listProjects();
+    const project = result.projects.find((entry) => entry.projectId === projectId);
+    if (!project) throw new Error("Paseo project no longer exists. Refresh before starting.");
+    return {
+      supported: true,
+      folders: (project.conversationFolders?.folders ?? []).map(({ id, parentId, name, createdAt }) => ({ id, parentId, name, createdAt })),
+    };
+  };
+
   return {
     dispose,
     hosts: createHostActions(daemonClient, { own, signal: lifetime.signal, api: createPaseoApi }),
@@ -727,6 +748,18 @@ export function createPaseoApi(
     terminals,
     projects: {
       list: (options) => daemonClient.listProjects(options),
+      getConversationFolders,
+      assignConversationToFolder: async (projectId, agentId, folderId) => {
+        const { supported, folders } = await getConversationFolders(projectId);
+        if (!supported) throw new Error("This Paseo host does not support conversation folders.");
+        if (folderId !== null && !folders.some((folder) => folder.id === folderId))
+          throw new Error("The selected Paseo folder no longer exists. Choose another folder before starting.");
+        await daemonClient.changeProjectConversationFolders(projectId, {
+          kind: "move",
+          agentId,
+          folderId,
+        });
+      },
       subscribe: (handler) => {
         return subscribeEvent("project.update", (message) => {
           if (message.type === "project.update") handler(message.payload);

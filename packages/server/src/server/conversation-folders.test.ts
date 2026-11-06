@@ -106,3 +106,29 @@ test("a second device import preserves live host names and assignments while add
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("a newly created conversation is assigned by folder ID and stays assigned after rename", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "paseo-folder-agent-assignment-"));
+  const registry = new FileBackedProjectRegistry(path.join(root, "projects.json"), createTestLogger());
+  try {
+    await registry.upsert(createPersistedProjectRecord({
+      projectId: "project", rootPath: root, kind: "non_git", displayName: "Project",
+      createdAt: "2026-11-05T00:00:00Z", updatedAt: "2026-11-05T00:00:00Z",
+    }));
+    const created = await changeProjectConversationFolders(registry, "project", {
+      kind: "create", id: "stable-folder-id", parentId: null, name: "Review",
+    });
+    expect(created.folders[0]?.createdAt).toBeTruthy();
+    await changeProjectConversationFolders(registry, "project", {
+      kind: "move", agentId: "new-agent", folderId: "stable-folder-id",
+    });
+    await changeProjectConversationFolders(registry, "project", {
+      kind: "rename", id: "stable-folder-id", name: "Renamed review",
+    });
+    const saved = (await registry.get("project"))?.conversationFolders;
+    expect(saved?.assignments["new-agent"]).toBe("stable-folder-id");
+    expect(saved?.folders[0]).toMatchObject({ id: "stable-folder-id", name: "Renamed review" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

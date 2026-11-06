@@ -167,7 +167,7 @@ describe("conversation folders", () => {
       { kind: "remove", id: "root" },
     );
     expect(state.assignments).toEqual({ two: "child" });
-    expect(state.folders).toEqual([
+    expect(state.folders.map(({ id, name, parentId, collapsed }) => ({ id, name, parentId, collapsed }))).toEqual([
       { id: "child", name: "Child", parentId: null, collapsed: false },
     ]);
   });

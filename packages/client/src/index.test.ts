@@ -279,6 +279,32 @@ test("createPaseoApi borrows daemon capabilities without exposing connection own
   expect("skills" in paseo.agents).toBe(false);
 });
 
+test("project conversation-folder SDK reads host folders and assigns by stable ID", async () => {
+  const folder = { id: "folder-id", parentId: null, name: "Renamed later", createdAt: "2026-11-06T00:00:00.000Z" };
+  const client = {
+    getLastServerInfoMessage: () => ({ features: { conversationFolders: true } }),
+    listProjects: vi.fn(async () => ({ projects: [{ projectId: "project", conversationFolders: { folders: [folder] } }] })),
+    changeProjectConversationFolders: vi.fn(async (_projectId: string, command: unknown) => ({ folders: [folder], assignments: { agent: "folder-id" }, unfiledCollapsed: true, command })),
+  } as unknown as DaemonClient;
+  const api = createPaseoApi(client);
+  expect(await api.projects.getConversationFolders("project")).toEqual({ supported: true, folders: [folder] });
+  await api.projects.assignConversationToFolder("project", "agent", "folder-id");
+  expect(client.changeProjectConversationFolders).toHaveBeenCalledWith("project", { kind: "move", agentId: "agent", folderId: "folder-id" });
+  await expect(api.projects.assignConversationToFolder("project", "agent", "deleted")).rejects.toThrow("no longer exists");
+});
+
+test("project conversation-folder SDK reports unsupported hosts without issuing a mutation", async () => {
+  const client = {
+    getLastServerInfoMessage: () => ({ features: {} }),
+    listProjects: vi.fn(),
+    changeProjectConversationFolders: vi.fn(),
+  } as unknown as DaemonClient;
+  const api = createPaseoApi(client);
+  expect(await api.projects.getConversationFolders("project")).toEqual({ supported: false, folders: [] });
+  await expect(api.projects.assignConversationToFolder("project", "agent", null)).rejects.toThrow("does not support");
+  expect(client.changeProjectConversationFolders).not.toHaveBeenCalled();
+});
+
 test("agent handles send permission responses for their agent", async () => {
   const { client, ws } = await connectClient();
 
