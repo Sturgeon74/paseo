@@ -4,6 +4,7 @@ import {
   conversationProjectKey,
   emptyProjectFolders,
   groupConversations,
+  selectWorkspaceSidebarTitle,
   placeFolders,
   selectProjectConversations,
   selectWorkspaceFolderTargets,
@@ -17,6 +18,32 @@ function organize(...actions: FolderAction[]) {
 }
 
 describe("conversation folders", () => {
+  it("keeps agent titles intact when conversations move between folders and back to root", () => {
+    const folders = organize(
+      { kind: "create", id: "a", parentId: null, name: "A" },
+      { kind: "create", id: "b", parentId: null, name: "B" },
+    );
+    const agent = { id: "session", title: "Prompt title", provider: "codex" };
+    const move = (state: typeof folders, folderId: string | null) =>
+      applyFolderAction(state, { kind: "move", agentId: agent.id, folderId });
+    const titleIn = (state: typeof folders, folderId: string | null) =>
+      groupConversations([agent], state.assignments, placeFolders(state.folders)).get(folderId)?.[0]
+        ?.title;
+
+    const inA = move(folders, "a");
+    const inB = move(inA, "b");
+    const atRoot = move(inB, null);
+    expect(titleIn(inA, "a")).toBe("Prompt title");
+    expect(titleIn(inB, "b")).toBe("Prompt title");
+    expect(titleIn(atRoot, null)).toBe("Prompt title");
+
+    const renamed = { ...agent, title: "Manual title" };
+    expect(
+      groupConversations([renamed], inA.assignments, placeFolders(inA.folders)).get("a"),
+    ).toEqual([renamed]);
+    expect(folders.assignments).toEqual({});
+  });
+
   it("offers workspace filing when there is no active session and retains it when a session appears", () => {
     const workspace = { id: "workspace", name: "F03 review" };
     const folders = organize({ kind: "create", id: "f03", name: "F03", parentId: null });
@@ -181,7 +208,9 @@ describe("conversation folders", () => {
       { ...base, id: "different", title: "Different project", workspaceId: "other" },
     ];
     const input = { agents, visibleWorkspaces, projectViewKey: "project", serverId: "host" };
-    expect(selectProjectConversations(input).map(({ id }) => id)).toEqual(["a", "b"]);
+    const visible = selectProjectConversations(input);
+    expect(visible.map(({ id }) => id)).toEqual(["a", "b"]);
+    expect(visible.map(({ title }) => title)).toEqual(["Build", "Review"]);
     expect(selectProjectConversations({ ...input, serverId: "missing-host" })).toEqual([]);
   });
 
@@ -198,5 +227,23 @@ describe("conversation folders", () => {
       state,
     );
     expect(conversationProjectKey("a:b", "c")).not.toBe(conversationProjectKey("a", "b:c"));
+  });
+});
+
+describe("selectWorkspaceSidebarTitle", () => {
+  it("uses a sole session's title at the project root", () => {
+    expect(
+      selectWorkspaceSidebarTitle("Workspace title", [
+        { kind: "agent", id: "agent", title: "Session title" },
+      ]),
+    ).toBe("Session title");
+  });
+
+  it("keeps the workspace title when the row represents a workspace", () => {
+    expect(
+      selectWorkspaceSidebarTitle("Workspace title", [
+        { kind: "workspace", id: "workspace", title: "Workspace title" },
+      ]),
+    ).toBe("Workspace title");
   });
 });

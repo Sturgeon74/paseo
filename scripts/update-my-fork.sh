@@ -10,18 +10,38 @@ usage() {
   echo "--build-only skips fetching and merging; --install-only uses the existing build."
   echo "The iOS IPA is written to artifacts/paseo-device-hub.ipa."
   echo "After building, you can install it directly to a connected iPad with devicectl."
-  echo "Set PASEO_IOS_TEAM_ID; Xcode needs an ad hoc profile for sh.paseo with Push Notifications and the iPad UDID, plus its signing certificate."
+  echo "iOS signing settings are read from .dev/paseo-fork-signing.conf or the environment."
+  echo "Xcode needs an ad hoc profile for the configured bundle ID, the iPad, and its signing certificate."
 }
 
 mode="${1:-}"
 if [[ "$mode" == "--help" || "$mode" == "-h" ]]; then usage; exit 0; fi
 if [[ $# -gt 1 || ( -n "$mode" && "$mode" != "--build-only" && "$mode" != "--install-only" ) ]]; then usage >&2; exit 2; fi
 if [[ "$(uname -s)" != "Darwin" ]]; then echo "This script builds the macOS app and iOS IPA." >&2; exit 1; fi
+
+# This ignored file stores identifiers only. Environment variables take precedence.
+signing_config="$ROOT/.dev/paseo-fork-signing.conf"
+if [[ -f "$signing_config" ]]; then
+  while IFS='=' read -r key value || [[ -n "$key" ]]; do
+    case "$key" in
+      PASEO_IOS_TEAM_ID) if [[ -z "${PASEO_IOS_TEAM_ID:-}" ]]; then PASEO_IOS_TEAM_ID="$value"; fi ;;
+      PASEO_IOS_BUNDLE_ID) if [[ -z "${PASEO_IOS_BUNDLE_ID:-}" ]]; then PASEO_IOS_BUNDLE_ID="$value"; fi ;;
+      ''|'#'*) ;;
+      *) echo "Unknown setting in $signing_config: $key" >&2; exit 1 ;;
+    esac
+  done < "$signing_config"
+fi
 if [[ "$mode" != "--install-only" && -z "${PASEO_IOS_TEAM_ID:-}" ]]; then
-  echo "Set PASEO_IOS_TEAM_ID to the 10-character Apple Developer Team ID before building the iOS IPA." >&2
-  echo "Xcode also needs an ad hoc provisioning profile that includes the target iPad and a signing certificate." >&2
+  echo "Set PASEO_IOS_TEAM_ID in $signing_config or the environment before building the iOS IPA." >&2
   exit 1
 fi
+if [[ "$mode" != "--install-only" && ! "${PASEO_IOS_TEAM_ID:-}" =~ ^[A-Z0-9]{10}$ ]]; then
+  echo "PASEO_IOS_TEAM_ID must be a 10-character Apple Developer Team ID." >&2; exit 1
+fi
+if [[ "$mode" != "--install-only" && -n "${PASEO_IOS_BUNDLE_ID:-}" && ! "$PASEO_IOS_BUNDLE_ID" =~ ^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$ ]]; then
+  echo "PASEO_IOS_BUNDLE_ID must be a valid reverse-DNS bundle identifier." >&2; exit 1
+fi
+export PASEO_IOS_TEAM_ID PASEO_IOS_BUNDLE_ID
 
 if [[ -z "$mode" ]]; then
   branch="$(git symbolic-ref --quiet --short HEAD)" || { echo "Check out your fork branch first." >&2; exit 1; }
@@ -79,7 +99,7 @@ if [[ "$mode" != "--install-only" ]]; then
   echo "Build complete: $app"
 
   echo "Preparing the production iOS app and building a Release archive..."
-  echo "The installed ad hoc profile must target sh.paseo, enable Push Notifications, and include the iPad UDID."
+  echo "The installed ad hoc profile must target ${PASEO_IOS_BUNDLE_ID:-sh.paseo}, enable Push Notifications, and include the iPad UDID."
   npm run build:client
   (
     cd "$ROOT/packages/app"

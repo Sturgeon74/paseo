@@ -44,6 +44,7 @@ const HOVER_CARD_WIDTH = 260;
 
 interface WorkspaceHoverCardProps {
   workspace: SidebarWorkspaceEntry;
+  sessionTitle?: string;
   prHint: PrHint | null;
   isDragging: boolean;
   disabled?: boolean;
@@ -51,6 +52,7 @@ interface WorkspaceHoverCardProps {
 
 export function WorkspaceHoverCard({
   workspace,
+  sessionTitle,
   prHint,
   isDragging,
   disabled = false,
@@ -73,7 +75,11 @@ export function WorkspaceHoverCard({
         testID="workspace-hover-card"
         style={styles.card}
       >
-        <WorkspaceHoverCardContent workspace={workspace} prHint={prHint} />
+        <WorkspaceHoverCardContent
+          workspace={workspace}
+          sessionTitle={sessionTitle}
+          prHint={prHint}
+        />
       </HoverCardContent>
     </HoverCard>
   );
@@ -81,9 +87,11 @@ export function WorkspaceHoverCard({
 
 function WorkspaceHoverCardContent({
   workspace,
+  sessionTitle,
   prHint,
 }: {
   workspace: SidebarWorkspaceEntry;
+  sessionTitle?: string;
   prHint: PrHint | null;
 }): ReactElement {
   const { t } = useTranslation();
@@ -91,7 +99,7 @@ function WorkspaceHoverCardContent({
     <>
       <View style={styles.cardHeader}>
         <Text style={styles.cardTitle} testID="hover-card-workspace-name">
-          {workspace.name}
+          {sessionTitle ?? workspace.name}
         </Text>
       </View>
       {prHint ? <PrBadge hint={prHint} style={styles.cardInfoRow} /> : null}

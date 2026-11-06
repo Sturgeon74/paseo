@@ -24,6 +24,16 @@ describe("resolveSidebarWorkspacePrimaryLabel", () => {
     expect(label).toBe("fix/search");
   });
 
+  it("uses the session name when a workspace row represents one session", () => {
+    const label = resolveSidebarWorkspacePrimaryLabel({
+      workspace: { name: "Workspace title", currentBranch: "fix/search" },
+      workspaceTitleSource: "branch",
+      sessionTitle: "Session title",
+    });
+
+    expect(label).toBe("Session title");
+  });
+
   it("falls back to the workspace name in branch mode without a branch", () => {
     const label = resolveSidebarWorkspacePrimaryLabel({
       workspace: { name: "Local folder", currentBranch: null },

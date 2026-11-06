@@ -6,7 +6,9 @@ import { getStatusBucketLabel } from "@/hooks/sidebar-status-view-model";
 export function resolveSidebarWorkspacePrimaryLabel(input: {
   workspace: Pick<SidebarWorkspaceEntry, "name" | "currentBranch">;
   workspaceTitleSource: WorkspaceTitleSource;
+  sessionTitle?: string;
 }): string {
+  if (input.sessionTitle) return input.sessionTitle;
   if (input.workspaceTitleSource === "branch") {
     return input.workspace.currentBranch ?? input.workspace.name;
   }
@@ -16,6 +18,7 @@ export function resolveSidebarWorkspacePrimaryLabel(input: {
 export function resolveSidebarWorkspaceAccessibilityLabel(input: {
   workspace: Pick<SidebarWorkspaceEntry, "name" | "currentBranch" | "statusBucket">;
   workspaceTitleSource: WorkspaceTitleSource;
+  sessionTitle?: string;
   leadingProjectName?: string | null;
   hostBadgeLabel?: string | null;
   pullRequestLabel?: string | null;

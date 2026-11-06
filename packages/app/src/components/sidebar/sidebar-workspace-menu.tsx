@@ -336,6 +336,7 @@ export function SidebarWorkspaceContextMenu({
   contextMenuOpen,
   onContextMenuOpenChange,
   workspace,
+  sessionTitle,
   leadingProjectName,
   hostBadgeLabel,
   serviceSummary,
@@ -362,6 +363,7 @@ export function SidebarWorkspaceContextMenu({
       contextMenuOpen: boolean;
       onContextMenuOpenChange: (open: boolean) => void;
       workspace: SidebarWorkspaceEntry;
+      sessionTitle?: string;
       leadingProjectName?: string | null;
       hostBadgeLabel?: string | null;
       serviceSummary?: WorkspaceServiceSummary | null;
@@ -381,6 +383,7 @@ export function SidebarWorkspaceContextMenu({
   const rowAccessibilityLabel = resolveSidebarWorkspaceAccessibilityLabel({
     workspace,
     workspaceTitleSource,
+    sessionTitle,
     leadingProjectName,
     hostBadgeLabel,
     pullRequestLabel,

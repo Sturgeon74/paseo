@@ -92,6 +92,7 @@ import {
   workspaceFolderId,
   folderDropAction,
   selectWorkspaceFolderTargets,
+  selectWorkspaceSidebarTitle,
   emptyProjectFolders,
 } from "@/components/sidebar/conversation-folders/model";
 import { conversationFolderStore } from "@/components/sidebar/conversation-folders/store";
@@ -281,6 +282,7 @@ interface ProjectHeaderRowProps {
 
 interface WorkspaceRowInnerProps {
   workspace: SidebarWorkspaceEntry;
+  sessionTitle?: string;
   hostBadge?: HostBadgeModel | null;
   leadingProjectName?: string | null;
   leadingProjectIconDataUri?: string | null;
@@ -1083,6 +1085,7 @@ function ProjectHeaderRow({
 
 function WorkspaceRowInner({
   workspace,
+  sessionTitle,
   hostBadge,
   leadingProjectName,
   leadingProjectIconDataUri,
@@ -1146,7 +1149,11 @@ function WorkspaceRowInner({
   const accessibilityState = useMemo(() => ({ selected }), [selected]);
 
   return (
-    <SidebarWorkspaceRowFrame workspace={workspace} isDragging={isDragging}>
+    <SidebarWorkspaceRowFrame
+      workspace={workspace}
+      sessionTitle={sessionTitle}
+      isDragging={isDragging}
+    >
       {({ isHovered, contextMenuOpen, onContextMenuOpenChange, hoverHandlers }) => {
         const isDesktop = !isTouchPlatform;
         const serviceSummary = isDesktop ? selectWorkspaceServiceSummary(workspace.scripts) : null;
@@ -1169,6 +1176,7 @@ function WorkspaceRowInner({
               contextMenuOpen={contextMenuOpen}
               onContextMenuOpenChange={onContextMenuOpenChange}
               workspace={workspace}
+              sessionTitle={sessionTitle}
               leadingProjectName={leadingProjectName}
               hostBadgeLabel={hostBadge?.label}
               workspaceKey={workspace.workspaceKey}
@@ -1199,6 +1207,7 @@ function WorkspaceRowInner({
             >
               <SidebarWorkspaceRowContent
                 workspace={workspace}
+                sessionTitle={sessionTitle}
                 hostBadge={hostBadge}
                 leadingProjectName={leadingProjectName}
                 leadingProjectIconDataUri={leadingProjectIconDataUri}
@@ -1243,6 +1252,7 @@ function WorkspaceRowInner({
 
 function WorkspaceRowWithMenu({
   workspace,
+  sessionTitle,
   hostBadge,
   leadingProjectName,
   leadingProjectIconDataUri,
@@ -1260,6 +1270,7 @@ function WorkspaceRowWithMenu({
   isCreating = false,
 }: {
   workspace: SidebarWorkspaceEntry;
+  sessionTitle?: string;
   hostBadge?: HostBadgeModel | null;
   leadingProjectName?: string | null;
   leadingProjectIconDataUri?: string | null;
@@ -1361,6 +1372,7 @@ function WorkspaceRowWithMenu({
     <>
       <WorkspaceRowInner
         workspace={workspace}
+        sessionTitle={sessionTitle}
         hostBadge={hostBadge}
         leadingProjectName={leadingProjectName}
         leadingProjectIconDataUri={leadingProjectIconDataUri}
@@ -1401,6 +1413,7 @@ function WorkspaceRowWithMenu({
 interface WorkspaceRowItemProps {
   workspace: SidebarWorkspacePlacement;
   workspaceEntry: SidebarWorkspaceEntry | null;
+  sessionTitle?: string;
   hostBadge?: HostBadgeModel | null;
   leadingProjectName?: string | null;
   leadingProjectIconDataUri?: string | null;
@@ -1422,6 +1435,7 @@ interface WorkspaceRowItemProps {
 function WorkspaceRowItem({
   workspace,
   workspaceEntry,
+  sessionTitle,
   hostBadge,
   leadingProjectName,
   leadingProjectIconDataUri,
@@ -1448,6 +1462,7 @@ function WorkspaceRowItem({
   return (
     <WorkspaceRow
       workspaceEntry={workspaceEntry}
+      sessionTitle={sessionTitle}
       hostBadge={hostBadge}
       leadingProjectName={leadingProjectName}
       leadingProjectIconDataUri={leadingProjectIconDataUri}
@@ -1491,6 +1506,7 @@ function areWorkspaceRowItemPropsEqual(
   return (
     previous.workspace === next.workspace &&
     previous.workspaceEntry === next.workspaceEntry &&
+    previous.sessionTitle === next.sessionTitle &&
     previous.hostBadge === next.hostBadge &&
     previous.leadingProjectName === next.leadingProjectName &&
     previous.leadingProjectIconDataUri === next.leadingProjectIconDataUri &&
@@ -1513,6 +1529,7 @@ const MemoWorkspaceRowItem = memo(WorkspaceRowItem, areWorkspaceRowItemPropsEqua
 
 function WorkspaceRow({
   workspaceEntry,
+  sessionTitle,
   hostBadge,
   leadingProjectName,
   leadingProjectIconDataUri,
@@ -1530,6 +1547,7 @@ function WorkspaceRow({
   selected,
 }: {
   workspaceEntry: SidebarWorkspaceEntry | null;
+  sessionTitle?: string;
   hostBadge?: HostBadgeModel | null;
   leadingProjectName?: string | null;
   leadingProjectIconDataUri?: string | null;
@@ -1553,6 +1571,7 @@ function WorkspaceRow({
   return (
     <WorkspaceRowWithMenu
       workspace={workspaceEntry}
+      sessionTitle={sessionTitle}
       hostBadge={hostBadge}
       leadingProjectName={leadingProjectName}
       leadingProjectIconDataUri={leadingProjectIconDataUri}
@@ -1750,6 +1769,11 @@ function ProjectBlock({
               key={item.workspaceKey}
               workspace={item}
               workspaceEntry={workspaceEntriesByKey.get(item.workspaceKey) ?? null}
+              sessionTitle={
+                targets.length === 1 && targets[0]?.kind === "agent"
+                  ? selectWorkspaceSidebarTitle(item.name, targets)
+                  : undefined
+              }
               hostBadge={hostBadgeByServerId.get(item.serverId) ?? null}
               shortcutNumber={shortcutIndexByWorkspaceKey.get(item.workspaceKey) ?? null}
               showShortcutBadge={showShortcutBadges}

@@ -135,6 +135,14 @@ export function selectWorkspaceFolderTargets({
   return [{ kind: "workspace", id: workspace.id, title: workspace.name }];
 }
 
+export function selectWorkspaceSidebarTitle(
+  workspaceTitle: string,
+  targets: Array<{ kind: "agent" | "workspace"; id: string; title: string }>,
+): string {
+  const target = targets[0];
+  return targets.length === 1 && target?.kind === "agent" ? target.title : workspaceTitle;
+}
+
 interface ProjectConversationInput<T> {
   agents: Iterable<T>;
   visibleWorkspaces: ReadonlyMap<string, { projectViewKey: string }>;

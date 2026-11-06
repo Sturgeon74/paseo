@@ -41,10 +41,12 @@ const ThemedCircleAlert = withUnistyles(CircleAlert);
 
 export function SidebarWorkspaceRowFrame({
   workspace,
+  sessionTitle,
   isDragging = false,
   children,
 }: {
   workspace: SidebarWorkspaceEntry;
+  sessionTitle?: string;
   isDragging?: boolean;
   children: (input: {
     isHovered: boolean;
@@ -71,6 +73,7 @@ export function SidebarWorkspaceRowFrame({
   return (
     <WorkspaceHoverCard
       workspace={workspace}
+      sessionTitle={sessionTitle}
       prHint={workspace.prHint}
       isDragging={isDragging}
       disabled={contextMenuOpen}
@@ -87,6 +90,7 @@ export function SidebarWorkspaceRowFrame({
 
 export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowContent({
   workspace,
+  sessionTitle,
   hostBadge,
   leadingProjectName = null,
   leadingProjectIconDataUri = null,
@@ -101,6 +105,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   children,
 }: {
   workspace: SidebarWorkspaceEntry;
+  sessionTitle?: string;
   hostBadge?: HostBadgeModel | null;
   /** Hoisted rows use their project icon as the leading visual because no project row contains them. */
   leadingProjectName?: string | null;
@@ -120,7 +125,11 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   const {
     settings: { workspaceTitleSource },
   } = useAppSettings();
-  const workspaceLabel = resolveSidebarWorkspacePrimaryLabel({ workspace, workspaceTitleSource });
+  const workspaceLabel = resolveSidebarWorkspacePrimaryLabel({
+    workspace,
+    workspaceTitleSource,
+    sessionTitle,
+  });
   // The workspace carries label names; their colors live in its host's catalog, so the row is
   // where the two meet — the meta line is handed finished definitions.
   const labels = useWorkspaceLabelDefinitions(workspace.serverId, workspace.labels);
