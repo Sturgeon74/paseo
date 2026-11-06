@@ -730,13 +730,13 @@ export function createPaseoApi(
   }
 
   const getConversationFolders: PaseoProjectActions["getConversationFolders"] = async (projectId) => {
-    if (daemonClient.getLastServerInfoMessage()?.features?.conversationFolders !== true)
-      return { supported: false, folders: [] };
+    const hostAdvertisesFolders = daemonClient.getLastServerInfoMessage()?.features?.conversationFolders === true;
     const result = await daemonClient.listProjects();
     const project = result.projects.find((entry) => entry.projectId === projectId);
     if (!project) throw new Error("Paseo project no longer exists. Refresh before starting.");
+    const supported = hostAdvertisesFolders || project.conversationFolders !== undefined;
     return {
-      supported: true,
+      supported,
       folders: (project.conversationFolders?.folders ?? []).map(({ id, parentId, name, createdAt }) => ({ id, parentId, name, createdAt })),
     };
   };

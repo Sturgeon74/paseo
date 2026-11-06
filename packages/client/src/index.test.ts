@@ -296,13 +296,23 @@ test("project conversation-folder SDK reads host folders and assigns by stable I
 test("project conversation-folder SDK reports unsupported hosts without issuing a mutation", async () => {
   const client = {
     getLastServerInfoMessage: () => ({ features: {} }),
-    listProjects: vi.fn(),
+    listProjects: vi.fn(async () => ({ projects: [{ projectId: "project" }] })),
     changeProjectConversationFolders: vi.fn(),
   } as unknown as DaemonClient;
   const api = createPaseoApi(client);
   expect(await api.projects.getConversationFolders("project")).toEqual({ supported: false, folders: [] });
   await expect(api.projects.assignConversationToFolder("project", "agent", null)).rejects.toThrow("does not support");
   expect(client.changeProjectConversationFolders).not.toHaveBeenCalled();
+});
+
+test("project folder data remains available when the host omits its capability flag", async () => {
+  const folder = { id: "nested-id", parentId: "parent-id", name: "Nested", createdAt: "2026-11-06T00:00:00.000Z" };
+  const client = {
+    getLastServerInfoMessage: () => ({ features: {} }),
+    listProjects: vi.fn(async () => ({ projects: [{ projectId: "project", conversationFolders: { folders: [folder] } }] })),
+  } as unknown as DaemonClient;
+  const api = createPaseoApi(client);
+  expect(await api.projects.getConversationFolders("project")).toEqual({ supported: true, folders: [folder] });
 });
 
 test("agent handles send permission responses for their agent", async () => {

@@ -37,6 +37,8 @@ export interface ModalContentProps {
   contentContainerStyle?: StyleProp<ViewStyle>;
   /** Default true. Set false for a bounded body with your own ScrollView or FlatList. */
   scrollable?: boolean;
+  /** Optional desktop width for content-heavy plugin dialogs. */
+  desktopMaxWidth?: number;
 }
 
 export interface ModalComponent extends FunctionComponent<ModalProps> {

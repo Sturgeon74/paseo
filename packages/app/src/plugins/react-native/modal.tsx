@@ -35,6 +35,7 @@ function ModalContent({
   style,
   contentContainerStyle,
   scrollable = true,
+  desktopMaxWidth,
 }: ModalContentProps) {
   const modal = useModalContext();
   const queryClient = useQueryClient();
@@ -61,6 +62,7 @@ function ModalContent({
       contentStyle={contentContainerStyle}
       scrollable={scrollable}
       desktopHeight={scrollable ? undefined : "85%"}
+      desktopMaxWidth={desktopMaxWidth}
     >
       {children}
     </AdaptiveModalSheet>
