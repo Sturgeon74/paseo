@@ -11,6 +11,7 @@ import type { SidebarProjectEntry } from "@/hooks/use-sidebar-workspaces-list";
 import { getHostRuntimeStore, useHostRuntimeIsConnected, useHosts } from "@/runtime/host-runtime";
 import { useSessionStore, type Agent } from "@/stores/session-store";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
+import { agentSidebarStateBucket } from "@/utils/workspace-agent-activity";
 import {
   deriveIdentityColorName,
   IDENTITY_COLOR_NAMES,
@@ -22,6 +23,7 @@ import {
   placeFolders,
   selectProjectConversations,
   folderDropAction,
+  runningFolderAncestors,
   type FolderAction,
   type ProjectFolders,
 } from "./model";
@@ -285,6 +287,38 @@ function FolderTree({
     placements,
   ]);
 
+  const runningFolders = useMemo(() => {
+    const ids: string[] = [];
+    for (const [folderId, entries] of groups) {
+      if (
+        folderId &&
+        entries.some((agent) => !agent.archivedAt && agentSidebarStateBucket(agent) === "running")
+      )
+        ids.push(folderId);
+    }
+    for (const agent of agents?.values() ?? []) {
+      if (
+        agent.archivedAt ||
+        agent.parentAgentId ||
+        !agent.workspaceId ||
+        agentSidebarStateBucket(agent) !== "running"
+      )
+        continue;
+      const workspace = workspaceEntriesByKey.get(`${serverId}:${agent.workspaceId}`);
+      const folderId = folders.workspaceAssignments?.[agent.workspaceId];
+      if (workspace?.projectViewKey === projectViewKey && folderId) ids.push(folderId);
+    }
+    return runningFolderAncestors(folders.folders, ids);
+  }, [
+    agents,
+    groups,
+    folders.folders,
+    folders.workspaceAssignments,
+    workspaceEntriesByKey,
+    projectViewKey,
+    serverId,
+  ]);
+
   const unfiledLabel = t("sidebar.conversationFolders.projectRoot");
   const folderChoices = useMemo(
     () => [
@@ -354,6 +388,7 @@ function FolderTree({
             depth={depth}
             label={folder.name}
             expanded={!folder.collapsed}
+            running={runningFolders.has(folder.id)}
             canMoveUp={canMoveUp}
             canMoveDown={canMoveDown}
             onChange={onChange}
@@ -450,6 +485,7 @@ const ConversationRow = memo(function ConversationRow({
         label={title || provider}
         depth={depth}
         color={color}
+        running={!agent.archivedAt && agentSidebarStateBucket(agent) === "running"}
         testID={`sidebar-conversation-${serverId}-${id}`}
         onPress={open}
         pages={pages}
@@ -512,6 +548,7 @@ interface FolderBranchProps {
   depth: number;
   label: string;
   expanded: boolean;
+  running: boolean;
   canMoveUp: boolean;
   canMoveDown: boolean;
   onChange: FolderTreeProps["onChange"];
@@ -527,6 +564,7 @@ function FolderBranch({
   depth,
   label,
   expanded,
+  running,
   canMoveUp,
   canMoveDown,
   onChange,
@@ -594,6 +632,7 @@ function FolderBranch({
           icon={Folder}
           label={label}
           expanded={expanded}
+          running={running}
           depth={depth}
           color={identityColor(color)}
           testID={`sidebar-conversation-folder-${id}`}

@@ -83,6 +83,22 @@ export function groupConversations<T extends { id: string }>(
   return groups;
 }
 
+export function runningFolderAncestors(
+  folders: ConversationFolder[],
+  runningFolderIds: Iterable<string>,
+): Set<string> {
+  const parents = new Map(folders.map((folder) => [folder.id, folder.parentId]));
+  const result = new Set<string>();
+  for (const folderId of runningFolderIds) {
+    let current: string | null | undefined = folderId;
+    while (current && parents.has(current) && !result.has(current)) {
+      result.add(current);
+      current = parents.get(current);
+    }
+  }
+  return result;
+}
+
 // A workspace placement survives its last active session. An explicit root placement
 // also prevents an old session assignment from pulling the workspace back into a folder.
 export function workspaceFolderId(

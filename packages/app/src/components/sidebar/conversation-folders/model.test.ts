@@ -4,6 +4,7 @@ import {
   conversationProjectKey,
   emptyProjectFolders,
   groupConversations,
+  runningFolderAncestors,
   selectWorkspaceSidebarTitle,
   placeFolders,
   selectProjectConversations,
@@ -18,6 +19,19 @@ function organize(...actions: FolderAction[]) {
 }
 
 describe("conversation folders", () => {
+  it("marks running folders and their ancestors, including collapsed folders", () => {
+    const state = organize(
+      { kind: "create", id: "root", parentId: null, name: "Root" },
+      { kind: "create", id: "child", parentId: "root", name: "Child" },
+      { kind: "create", id: "grandchild", parentId: "child", name: "Grandchild" },
+      { kind: "create", id: "other", parentId: null, name: "Other" },
+      { kind: "toggle", id: "root" },
+    );
+    expect(runningFolderAncestors(state.folders, ["grandchild", "missing"])).toEqual(
+      new Set(["grandchild", "child", "root"]),
+    );
+    expect(runningFolderAncestors(state.folders, [])).toEqual(new Set());
+  });
   it("keeps agent titles intact when conversations move between folders and back to root", () => {
     const folders = organize(
       { kind: "create", id: "a", parentId: null, name: "A" },
@@ -167,9 +181,9 @@ describe("conversation folders", () => {
       { kind: "remove", id: "root" },
     );
     expect(state.assignments).toEqual({ two: "child" });
-    expect(state.folders.map(({ id, name, parentId, collapsed }) => ({ id, name, parentId, collapsed }))).toEqual([
-      { id: "child", name: "Child", parentId: null, collapsed: false },
-    ]);
+    expect(
+      state.folders.map(({ id, name, parentId, collapsed }) => ({ id, name, parentId, collapsed })),
+    ).toEqual([{ id: "child", name: "Child", parentId: null, collapsed: false }]);
   });
 
   it("keeps unassigned and stale assignments accessible without showing missing agents", () => {

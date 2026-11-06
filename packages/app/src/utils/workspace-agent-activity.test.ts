@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { Agent } from "@/stores/session-store";
-import { buildWorkspaceAgentActivityIndex } from "./workspace-agent-activity";
+import {
+  agentSidebarStateBucket,
+  buildWorkspaceAgentActivityIndex,
+} from "./workspace-agent-activity";
 
 function agent(input: {
   id: string;
@@ -66,6 +69,38 @@ function agent(input: {
 }
 
 describe("workspace agent activity index", () => {
+  it("derives activity per conversation, including turn completion and permission requests", () => {
+    const running = agent({
+      id: "running",
+      workspaceId: "shared",
+      status: "running",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    const idle = agent({
+      id: "idle",
+      workspaceId: "shared",
+      status: "idle",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    expect(agentSidebarStateBucket(running)).toBe("running");
+    expect(agentSidebarStateBucket(idle)).toBe("done");
+    expect(
+      agentSidebarStateBucket({
+        ...running,
+        pendingPermissions: agent({
+          id: "permission",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          pendingPermissionCount: 1,
+        }).pendingPermissions,
+      }),
+    ).toBe("needs_input");
+    expect(
+      agentSidebarStateBucket({
+        ...running,
+        turn: { phase: "idle", cancellationRequestId: null },
+      }),
+    ).toBe("done");
+  });
   it("uses turn liveness for running while preserving protocol lifecycle states", () => {
     const result = buildWorkspaceAgentActivityIndex(
       new Map([

@@ -24,6 +24,8 @@ import type { PluginIcon } from "./contracts.js";
 export interface ModalProps {
   title: string;
   icon?: ReactNode;
+  /** Optional action displayed alongside the close button. */
+  actions?: ReactNode;
   open: boolean;
   onOpenChange(open: boolean): void;
   children: ReactNode;
@@ -43,6 +45,7 @@ export interface ModalContentProps {
 
 export interface ModalComponent extends FunctionComponent<ModalProps> {
   Content: ComponentType<ModalContentProps>;
+  supportsHeaderActions?: boolean;
 }
 
 export type ToastVariant = "default" | "info" | "success" | "warning" | "error";

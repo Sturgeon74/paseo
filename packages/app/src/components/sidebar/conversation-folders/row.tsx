@@ -8,6 +8,8 @@ import { DropdownMenuTrigger, type MenuPageDefinition } from "@/components/ui/dr
 import { PressHighlight } from "@/components/ui/press-highlight";
 import type { MenuTriggerState } from "@/components/ui/menu";
 import { DensityIcon } from "@/components/ui/density-icon";
+import { StatusRing } from "@/components/status-ring";
+import { getStatusBucketLabel } from "@/hooks/sidebar-status-view-model";
 import { isWeb } from "@/constants/platform";
 import { density } from "@/styles/density";
 
@@ -22,6 +24,7 @@ interface ConversationFolderRowProps {
   menu?: ReactNode;
   pages?: MenuPageDefinition[];
   color?: string;
+  running?: boolean;
 }
 
 export function ConversationFolderRow({
@@ -35,10 +38,13 @@ export function ConversationFolderRow({
   menu,
   pages,
   color,
+  running = false,
 }: ConversationFolderRowProps) {
   const { t } = useTranslation();
   const accessibilityState = expanded === undefined ? undefined : { expanded };
-  const accessibilityLabel = detail ? `${label}, ${detail}` : label;
+  const accessibilityLabel = [label, detail, running ? getStatusBucketLabel("running", t) : null]
+    .filter(Boolean)
+    .join(", ");
   const content = (
     <>
       {expanded !== undefined ? (
@@ -50,6 +56,11 @@ export function ConversationFolderRow({
       ) : null}
       {color ? <View style={[styles.colorDot, { backgroundColor: color }]} /> : null}
       <DensityIcon icon={icon} size="sm" color="foregroundMuted" />
+      {running ? (
+        <View testID={`${testID}-running`}>
+          <StatusRing />
+        </View>
+      ) : null}
       <Text numberOfLines={1} style={[styles.title, expanded && styles.expandedTitle]}>
         {label}
       </Text>
@@ -96,7 +107,9 @@ export function ConversationFolderRow({
         </ContextMenuTrigger>
         <DropdownMenuTrigger
           accessibilityRole="button"
-          accessibilityLabel={t("sidebar.conversationFolders.actionsFor", { name: label })}
+          accessibilityLabel={t("sidebar.conversationFolders.actionsFor", {
+            name: label,
+          })}
           testID={`${testID}-actions`}
           style={menuButtonStyle}
         >

@@ -13,6 +13,15 @@ function workspaceAgentStatus(agent: Agent): Agent["status"] {
   return agent.status === "running" ? "idle" : agent.status;
 }
 
+export function agentSidebarStateBucket(agent: Agent) {
+  return deriveSidebarStateBucket({
+    status: workspaceAgentStatus(agent),
+    pendingPermissionCount: agent.pendingPermissions.length,
+    requiresAttention: agent.requiresAttention,
+    attentionReason: agent.attentionReason,
+  });
+}
+
 export function buildWorkspaceAgentActivityIndex(
   agents: ReadonlyMap<string, Agent>,
   previous?: ReadonlyMap<string, WorkspaceAgentActivity>,
@@ -33,12 +42,7 @@ export function buildWorkspaceAgentActivityIndex(
     }
     latestActivityAtByWorkspaceId.set(agent.workspaceId, enteredAt);
 
-    const status = deriveSidebarStateBucket({
-      status: workspaceAgentStatus(agent),
-      pendingPermissionCount: agent.pendingPermissions.length,
-      requiresAttention: agent.requiresAttention,
-      attentionReason: agent.attentionReason,
-    });
+    const status = agentSidebarStateBucket(agent);
     activityByWorkspaceId.set(agent.workspaceId, {
       agentId: agent.id,
       status,
