@@ -670,6 +670,94 @@ async function startAndSteerThroughManager(
   return { manager, agentId: agent.id, workdir };
 }
 
+test("idle-only admission preserves queued permission requests and rejects competing sends", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-idle-admission-"));
+  const session = new TestAgentSession({ provider: "codex", cwd: workdir });
+  const client = new (class extends TestAgentClient {
+    override async createSession(): Promise<AgentSession> {
+      return session;
+    }
+  })();
+  const manager = new AgentManager({ clients: { codex: client }, logger });
+  const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  try {
+    await drainAsyncGenerator(manager.streamAgent(agent.id, "initial"));
+    session.pushEvent({
+      type: "permission_requested",
+      provider: "codex",
+      request: { id: "permission", provider: "codex", kind: "tool", name: "Read" },
+    });
+    expect(await manager.streamAgentIfIdle(agent.id, "continue", "turn-1")).toEqual({
+      status: "rejected",
+    });
+    expect(manager.getAgent(agent.id)?.pendingPermissions.has("permission")).toBe(true);
+    expect(manager.getAgent(agent.id)?.lifecycle).toBe("idle");
+    session.pushEvent({
+      type: "permission_resolved",
+      provider: "codex",
+      requestId: "permission",
+      resolution: { behavior: "allow" },
+    });
+    expect(await manager.streamAgentIfIdle(agent.id, "stale after permission", "turn-1")).toEqual({
+      status: "rejected",
+    });
+    await drainAsyncGenerator(manager.streamAgent(agent.id, "another turn"));
+    const [first, second] = await Promise.all([
+      manager.streamAgentIfIdle(agent.id, "first", "turn-2"),
+      manager.streamAgentIfIdle(agent.id, "second", "turn-2"),
+    ]);
+    expect(first.status).toBe("accepted");
+    expect(second.status).toBe("rejected");
+    expect(() => manager.streamAgent(agent.id, "manual")).toThrow(/active run/);
+    if (first.status === "accepted") await drainAsyncGenerator(first.iterator);
+    expect(await manager.streamAgentIfIdle(agent.id, "stale", "turn-1")).toEqual({
+      status: "rejected",
+    });
+    await manager.cancelAgentRun(agent.id);
+    expect(await manager.streamAgentIfIdle(agent.id, "after cancellation", "turn-3")).toEqual({
+      status: "rejected",
+    });
+  } finally {
+    await manager.closeAgent(agent.id).catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("manual prompt admission wins before a competing idle-only send", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manual-admission-"));
+  const release = deferred<void>();
+  class HeldSession extends TestAgentSession {
+    override async startTurn(): Promise<{ turnId: string }> {
+      await release.promise;
+      return super.startTurn();
+    }
+  }
+  const session = new HeldSession({ provider: "codex", cwd: workdir });
+  const client = new (class extends TestAgentClient {
+    override async createSession(): Promise<AgentSession> {
+      return session;
+    }
+  })();
+  const manager = new AgentManager({ clients: { codex: client }, logger });
+  const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  try {
+    await startAgentRun(manager, agent.id, "manual", logger, { replaceRunning: true });
+    expect(await manager.streamAgentIfIdle(agent.id, "continue", "turn-1")).toEqual({
+      status: "rejected",
+    });
+    release.resolve();
+    await manager.waitForAgentRunStart(agent.id);
+  } finally {
+    release.resolve();
+    await manager.closeAgent(agent.id).catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("uses an injected timeline store without making it a production requirement", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-timeline-store-"));
   const store = new RecordingTimelineStore();

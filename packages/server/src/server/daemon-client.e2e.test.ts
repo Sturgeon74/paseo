@@ -66,6 +66,42 @@ function tmpCwd(): string {
   return mkdtempSync(path.join(tmpdir(), "daemon-client-"));
 }
 
+test("idle-only send preserves a live permission over the daemon transport", async () => {
+  const cwd = tmpCwd();
+  const local = await createDaemonTestContext({ agentClients: createTestAgentClients() });
+  try {
+    const agent = await local.client.createAgent({
+      config: { provider: "codex", cwd, modeId: "default" },
+    });
+    await local.client.sendAgentMessage(agent.id, 'Run: printf "ok" > permission.txt');
+    const before = await local.client.waitForFinish(agent.id, 10000);
+    expect(before.status).toBe("permission");
+    const request = before.final!.pendingPermissions[0];
+    expect(request).toBeDefined();
+    const timeline = await local.client.fetchAgentTimeline(agent.id, {
+      direction: "tail",
+      limit: 20,
+    });
+    const turnId = timeline.entries.find((entry) => entry.item.type === "user_message")?.turnId;
+    expect(turnId).toBeTruthy();
+    expect(await local.client.sendAgentMessageIfIdle(agent.id, "continue", turnId!)).toEqual({
+      accepted: false,
+    });
+    const after = await local.client.fetchAgent({ agentId: agent.id });
+    expect(after?.agent.pendingPermissions.map((p) => p.id)).toContain(request.id);
+    expect(after?.agent.status).toBe(before.final!.status);
+    await local.client.respondToPermission(agent.id, request.id, { behavior: "allow" });
+    expect((await local.client.waitForFinish(agent.id, 10000)).status).toBe("idle");
+    expect(await local.client.sendAgentMessageIfIdle(agent.id, "continue", turnId!)).toEqual({
+      accepted: true,
+    });
+    expect((await local.client.waitForFinish(agent.id, 10000)).status).toBe("idle");
+  } finally {
+    await local.cleanup();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}, 30000);
+
 test("DaemonClient connects to a password-protected daemon", async () => {
   const daemon = await createTestPaseoDaemon({
     auth: { password: "$2b$12$GMhF7pN4QnMlHOQXOqjd1OitKWPSmAO3FwB0PHzKtcZR/sAMryz76" },

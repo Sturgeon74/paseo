@@ -2940,6 +2940,8 @@ export class Session {
 
   private dispatchAgentConfigMessage(msg: SessionInboundMessage): Promise<void> | undefined {
     switch (msg.type) {
+      case "agent.send_if_idle.request":
+        return this.handleSendAgentMessageIfIdle(msg);
       case "set_agent_mode_request":
         return this.agentConfigSession.handleSetAgentModeRequest(msg);
       case "set_agent_model_request":
@@ -8336,6 +8338,61 @@ export class Session {
     if (stored && !stored.title && !stored.lastUserMessageAt) {
       const { provisionalTitle } = resolveCreateAgentTitles({ initialPrompt: text });
       if (provisionalTitle) await this.agentManager.setTitle(agentId, provisionalTitle);
+    }
+  }
+
+  private async handleSendAgentMessageIfIdle(
+    msg: Extract<SessionInboundMessage, { type: "agent.send_if_idle.request" }>,
+  ): Promise<void> {
+    const resolved = await this.resolveAgentIdentifier(msg.agentId);
+    if (!resolved.ok) {
+      this.emit({
+        type: "agent.send_if_idle.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: msg.agentId,
+          accepted: false,
+          error: resolved.error,
+        },
+      });
+      return;
+    }
+    try {
+      const result = await this.agentManager.streamAgentIfIdle(
+        resolved.agentId,
+        msg.text,
+        msg.expectedTurnId,
+      );
+      if (result.status === "accepted") {
+        void (async () => {
+          try {
+            for await (const _ of result.iterator) {
+              /* manager broadcasts events */
+            }
+          } catch (error) {
+            this.handleAgentRunError(resolved.agentId, error, "Idle-only send failed");
+          }
+        })();
+      }
+      this.emit({
+        type: "agent.send_if_idle.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: resolved.agentId,
+          accepted: result.status === "accepted",
+          error: null,
+        },
+      });
+    } catch (error) {
+      this.emit({
+        type: "agent.send_if_idle.response",
+        payload: {
+          requestId: msg.requestId,
+          agentId: resolved.agentId,
+          accepted: false,
+          error: errorToFriendlyMessage(error),
+        },
+      });
     }
   }
 

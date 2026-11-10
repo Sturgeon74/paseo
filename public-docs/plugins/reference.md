@@ -2078,6 +2078,13 @@ function PullRequestAction({ theme }: PluginSurfaceProps) {
 
 The returned API covers projects, workspaces, agents, terminals, providers, and daemon config. See the [SDK API reference](/docs/sdk/reference) for its methods. Connection lifecycle methods are intentionally absent because Paseo owns the connection.
 
+For an automatic follow-up to a completed turn, check `agent.supportsSendIfIdle()` and call
+`agent.sendIfIdle(text, turnId)` with that turn's ID. The daemon accepts only the same live,
+idle session with no pending permission and no intervening turn. `{ accepted: false }` leaves
+the session untouched. An accepted result reserves a turn; it does not guarantee provider
+completion. A lost response is ambiguous, so inspect the session before retrying. This operation
+does not reopen a closed session or replace a manual prompt.
+
 ### Discover hosts and target another host
 
 Use `useHosts()` to display configured hosts and `getPaseoClient(serverId)` in an action callback

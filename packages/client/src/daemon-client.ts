@@ -3900,6 +3900,35 @@ export class DaemonClient {
   // Agent Interaction
   // ============================================================================
 
+  async sendAgentMessageIfIdle(
+    agentId: string,
+    text: string,
+    expectedTurnId: string,
+  ): Promise<{ accepted: boolean }> {
+    if (this.lastServerInfoMessage?.features?.agentSendIfIdle !== true) {
+      throw new Error("Update the Paseo host to send an idle-only message.");
+    }
+    const requestId = this.createRequestId();
+    const message = SessionInboundMessageSchema.parse({
+      type: "agent.send_if_idle.request",
+      requestId,
+      agentId,
+      text,
+      expectedTurnId,
+    });
+    const payload = await this.sendRequest({
+      requestId,
+      message,
+      options: { skipQueue: true },
+      select: (msg) =>
+        msg.type === "agent.send_if_idle.response" && msg.payload.requestId === requestId
+          ? msg.payload
+          : null,
+    });
+    if (payload.error) throw new Error(payload.error);
+    return { accepted: payload.accepted };
+  }
+
   async sendAgentMessage(
     agentId: string,
     text: string,

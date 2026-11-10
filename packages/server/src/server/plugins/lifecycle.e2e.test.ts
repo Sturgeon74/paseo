@@ -9,6 +9,78 @@ import { createTestPaseoDaemon } from "../test-utils/paseo-daemon.js";
 import { resolveDaemonVersion } from "../daemon-version.js";
 import { BuiltinPluginLoader } from "./builtin/index.js";
 
+test("plugin lifecycle can submit a same-session idle-only follow-up", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "paseo-idle-plugin-"));
+  const daemon = await createTestPaseoDaemon();
+  const client = new DaemonClient({
+    url: `ws://127.0.0.1:${daemon.port}/ws`,
+    appVersion: "0.15.2",
+  });
+  try {
+    await writeFile(
+      path.join(directory, "paseo-plugin.json"),
+      JSON.stringify({ id: "idle-followup", requirements: { paseo: ">=0.9.0" } }),
+    );
+    await writeFile(
+      path.join(directory, "index.server.ts"),
+      `
+export default function contribute(server) {
+  let sent = false;
+  server.on("agent.turn_ended", async (event, { paseo }) => {
+    if (sent) return;
+    sent = true;
+    const agent = paseo.agents.ref(event.agent.id);
+    const supported = agent.supportsSendIfIdle();
+    const result = await agent.sendIfIdle("Reply with exactly: FOLLOWUP", event.turnId);
+    console.log(JSON.stringify({ supported, result, agentId: event.agent.id }));
+  });
+  return () => {};
+}
+`,
+    );
+    await client.connect();
+    await client.patchDaemonConfig({ pluginsEnabled: true });
+    await client.installDirectoryPlugin(directory);
+    const agent = await client.createAgent({
+      provider: "codex",
+      cwd: directory,
+      title: "Idle follow-up",
+    });
+    await client.sendAgentMessage(agent.id, "Reply with exactly: FIRST");
+    await expect
+      .poll(
+        async () =>
+          (await client.getPluginLogs("idle-followup")).some((entry) => {
+            try {
+              const value = JSON.parse(entry.message);
+              return (
+                value.supported === true &&
+                value.result?.accepted === true &&
+                value.agentId === agent.id
+              );
+            } catch {
+              return false;
+            }
+          }),
+        { timeout: 10000 },
+      )
+      .toBe(true);
+    await expect
+      .poll(
+        async () => {
+          const page = await client.fetchAgentTimeline(agent.id, { direction: "tail", limit: 30 });
+          return page.entries.filter((entry) => entry.item.type === "user_message").length;
+        },
+        { timeout: 10000 },
+      )
+      .toBe(2);
+  } finally {
+    await client.close();
+    await daemon.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 60000);
+
 test("a plugin transforms workspace creation once across receipt replays and observes its committed lifecycle", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "paseo-lifecycle-"));
   const daemon = await createTestPaseoDaemon({ daemonVersion: "0.8.0" });

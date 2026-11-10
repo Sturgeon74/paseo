@@ -760,6 +760,7 @@ export class AgentManager {
   private readonly providerSubagents = new ProviderSubagentStore();
   private readonly agentsAwaitingInitialSnapshotPersist = new Set<string>();
   private readonly sessionEventTails = new Map<string, Promise<void>>();
+  private readonly lastCompletedTurnIds = new Map<string, string>();
   private readonly steerEventBarriers = new Map<string, SteerEventBarrier>();
   private readonly foregroundMutationTails = new Map<string, Promise<void>>();
   private readonly runs = new AgentRunState();
@@ -2646,6 +2647,7 @@ export class AgentManager {
     if (!handler) {
       return false;
     }
+    this.lastCompletedTurnIds.delete(agentId);
     this.touchUpdatedAt(agent);
     if (options?.clientMessageId) {
       this.recordSubmittedPrompt(agent, prompt, options.clientMessageId, "accepted");
@@ -2779,6 +2781,48 @@ export class AgentManager {
     yield* this.streamAgent(agentId, prompt, options);
   }
 
+  /** Reserve a foreground run only while the existing live session is idle.
+   * This path never opens, interrupts, or replaces a session. */
+  async streamAgentIfIdle(
+    agentId: string,
+    prompt: AgentPromptInput,
+    expectedTurnId: string,
+  ): Promise<
+    { status: "rejected" } | { status: "accepted"; iterator: AsyncGenerator<AgentStreamEvent> }
+  > {
+    return this.runLifecycleMutation(agentId, () =>
+      this.runForegroundMutation(agentId, async () => {
+        await this.drainSessionEvents(agentId);
+        const agent = this.agents.get(agentId);
+        if (
+          !agent ||
+          agent.lifecycle !== "idle" ||
+          this.collectingRuntimes.has(agentId) ||
+          this.lastCompletedTurnIds.get(agentId) !== expectedTurnId ||
+          agent.activeTurnId ||
+          agent.activeForegroundTurnId ||
+          agent.pendingReplacement ||
+          this.runs.hasRun(agentId) ||
+          agent.pendingPermissions.size ||
+          agent.inFlightPermissionResponses.size ||
+          this.sessionEventTails.has(agentId)
+        )
+          return { status: "rejected" as const };
+        try {
+          if (agent.session.getPendingPermissions().length) return { status: "rejected" as const };
+        } catch {
+          return { status: "rejected" as const };
+        }
+        // No await between the final eligibility check and streamAgent's synchronous
+        // foreground reservation. Competing prompts observe that reservation.
+        return {
+          status: "accepted" as const,
+          iterator: this.streamAgent(agentId, prompt, { clientMessageId: randomUUID() }),
+        };
+      }),
+    );
+  }
+
   streamAgent(
     agentId: string,
     prompt: AgentPromptInput,
@@ -2817,6 +2861,7 @@ export class AgentManager {
     }
 
     const agent = existingAgent;
+    this.lastCompletedTurnIds.delete(agentId);
     const isReplacement = agent.pendingReplacement;
     agent.lastError = undefined;
 
@@ -3349,6 +3394,7 @@ export class AgentManager {
   }
 
   private async cancelAgentRunNow(agentId: string): Promise<AgentRunCancellationResult> {
+    this.lastCompletedTurnIds.delete(agentId);
     const agent = this.requireSessionAgent(agentId);
     const run =
       this.runs.getRun(agentId) ??
@@ -4055,6 +4101,7 @@ export class AgentManager {
   ): ManagedAgentClosed {
     this.agentStreamCoalescer.flushAndDiscard(agent.id);
     this.agents.delete(agent.id);
+    this.lastCompletedTurnIds.delete(agent.id);
     this.previousStatuses.delete(agent.id);
     if (agent.unsubscribeSession) {
       agent.unsubscribeSession();
@@ -4581,6 +4628,11 @@ export class AgentManager {
 
     if (!options?.fromHistory) {
       if (isTurnTerminalEvent(event)) {
+        if (terminalDisposition !== "stale") {
+          if (event.type === "turn_completed" && eventTurnId)
+            this.lastCompletedTurnIds.set(agent.id, eventTurnId);
+          else this.lastCompletedTurnIds.delete(agent.id);
+        }
         this.runs.settleTerminalRun(agent.id, eventTurnId);
         if (isForegroundEvent) {
           this.finalizeForegroundTurn(agent, eventTurnId);
@@ -4948,6 +5000,7 @@ export class AgentManager {
       flags.shouldNotifyWaiters = false;
       return;
     }
+    this.lastCompletedTurnIds.delete(agent.id);
     this.runs.trackAutonomousRun(agent.id, eventTurnId ?? null);
     if (eventTurnId) {
       this.openActiveTurn(agent, eventTurnId, new Date());
@@ -4960,6 +5013,7 @@ export class AgentManager {
     agent: ActiveManagedAgent,
     event: Extract<AgentStreamEvent, { type: "permission_requested" }>,
   ): void {
+    this.lastCompletedTurnIds.delete(agent.id);
     const hadPendingPermissions = agent.pendingPermissions.size > 0;
     agent.pendingPermissions.set(event.request.id, event.request);
     this.refreshSessionPersistence(agent);

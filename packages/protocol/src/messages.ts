@@ -1452,6 +1452,14 @@ export const SendAgentMessageRequestSchema = z.object({
   attachments: AgentAttachmentsSchema,
 });
 
+export const SendAgentMessageIfIdleRequestSchema = z.object({
+  type: z.literal("agent.send_if_idle.request"),
+  requestId: z.string(),
+  agentId: z.string(),
+  text: z.string(),
+  expectedTurnId: z.string().min(1),
+});
+
 export const WaitForFinishRequestSchema = z.object({
   type: z.literal("wait_for_finish_request"),
   requestId: z.string(),
@@ -3343,6 +3351,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceRecoveryRestoreRequestSchema,
   SetVoiceModeMessageSchema,
   SendAgentMessageRequestSchema,
+  SendAgentMessageIfIdleRequestSchema,
   WaitForFinishRequestSchema,
   DaemonGetStatusRequestSchema,
   DaemonGetPairingOfferRequestSchema,
@@ -3899,6 +3908,8 @@ export const ServerInfoStatusPayloadSchema = z
         agentProfiles: z.boolean().optional(),
         // COMPAT(agentConfigApply): added in v0.3.2, remove gate after 2027-02-11.
         agentConfigApply: z.boolean().optional(),
+        // COMPAT(agentSendIfIdle): added in v0.15.2 fork; remove gate after 2027-11-10.
+        agentSendIfIdle: z.boolean().optional(),
       })
       .optional(),
   })
@@ -5150,6 +5161,16 @@ export const SendAgentMessageResponseMessageSchema = z.object({
     agentId: z.string(),
     accepted: z.boolean(),
     deliveryStatus: z.literal("queued").optional(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const SendAgentMessageIfIdleResponseSchema = z.object({
+  type: z.literal("agent.send_if_idle.response"),
+  payload: z.object({
+    requestId: z.string(),
+    agentId: z.string(),
+    accepted: z.boolean(),
     error: z.string().nullable(),
   }),
 });
@@ -7164,6 +7185,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceClearAttentionResponseSchema,
   WorkspaceMarkUnreadResponseSchema,
   SendAgentMessageResponseMessageSchema,
+  SendAgentMessageIfIdleResponseSchema,
   SetVoiceModeResponseMessageSchema,
   DaemonGetStatusResponseSchema,
   DaemonGetPairingOfferResponseSchema,

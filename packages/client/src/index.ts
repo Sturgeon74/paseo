@@ -201,8 +201,14 @@ export interface PaseoWorkspaceHandle {
 
 export interface PaseoProjectActions {
   list(options?: PaseoProjectListOptions): Promise<PaseoProjectListResult>;
-  getConversationFolders(projectId: string): Promise<{ supported: boolean; folders: PaseoConversationFolder[] }>;
-  assignConversationToFolder(projectId: string, agentId: string, folderId: string | null): Promise<void>;
+  getConversationFolders(
+    projectId: string,
+  ): Promise<{ supported: boolean; folders: PaseoConversationFolder[] }>;
+  assignConversationToFolder(
+    projectId: string,
+    agentId: string,
+    folderId: string | null,
+  ): Promise<void>;
   subscribe(handler: PaseoProjectUpdateHandler): () => void;
 }
 
@@ -385,6 +391,8 @@ export interface PaseoAgentHandle {
    */
   reload(options?: { requestId?: string }): Promise<PaseoAgentRefetchResult | null>;
   send(text: string, options?: PaseoAgentSendOptions): Promise<void>;
+  supportsSendIfIdle(): boolean;
+  sendIfIdle(text: string, expectedTurnId: string): Promise<{ accepted: boolean }>;
   respondToPermission(options: PaseoAgentRespondToPermissionOptions): Promise<void>;
   /** Sends a prompt and resolves when that turn finishes or needs attention. */
   run(text: string, options?: PaseoAgentRunOptions): Promise<PaseoAgentRunResult>;
@@ -729,15 +737,20 @@ export function createPaseoApi(
     return { ...(await subscription.ready), subscription };
   }
 
-  const getConversationFolders: PaseoProjectActions["getConversationFolders"] = async (projectId) => {
-    const hostAdvertisesFolders = daemonClient.getLastServerInfoMessage()?.features?.conversationFolders === true;
+  const getConversationFolders: PaseoProjectActions["getConversationFolders"] = async (
+    projectId,
+  ) => {
+    const hostAdvertisesFolders =
+      daemonClient.getLastServerInfoMessage()?.features?.conversationFolders === true;
     const result = await daemonClient.listProjects();
     const project = result.projects.find((entry) => entry.projectId === projectId);
     if (!project) throw new Error("Paseo project no longer exists. Refresh before starting.");
     const supported = hostAdvertisesFolders || project.conversationFolders !== undefined;
     return {
       supported,
-      folders: (project.conversationFolders?.folders ?? []).map(({ id, parentId, name, createdAt }) => ({ id, parentId, name, createdAt })),
+      folders: (project.conversationFolders?.folders ?? []).map(
+        ({ id, parentId, name, createdAt }) => ({ id, parentId, name, createdAt }),
+      ),
     };
   };
 
@@ -753,7 +766,9 @@ export function createPaseoApi(
         const { supported, folders } = await getConversationFolders(projectId);
         if (!supported) throw new Error("This Paseo host does not support conversation folders.");
         if (folderId !== null && !folders.some((folder) => folder.id === folderId))
-          throw new Error("The selected Paseo folder no longer exists. Choose another folder before starting.");
+          throw new Error(
+            "The selected Paseo folder no longer exists. Choose another folder before starting.",
+          );
         await daemonClient.changeProjectConversationFolders(projectId, {
           kind: "move",
           agentId,
@@ -1029,6 +1044,10 @@ function createAgentHandleFactory(
       send: async (text, options) => {
         await daemonClient.sendAgentMessage(id, text, options);
       },
+      supportsSendIfIdle: () =>
+        daemonClient.getLastServerInfoMessage()?.features?.agentSendIfIdle === true,
+      sendIfIdle: (text, expectedTurnId) =>
+        daemonClient.sendAgentMessageIfIdle(id, text, expectedTurnId),
       respondToPermission: async ({ requestId, response }) => {
         await daemonClient.respondToPermission(id, requestId, response);
       },
