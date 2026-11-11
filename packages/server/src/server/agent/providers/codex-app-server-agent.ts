@@ -3439,6 +3439,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   // in this app-server, so no other app-server can resume it and it is not reported.
   private savedThreadId: string | null = null;
   private currentTurnId: string | null = null;
+  private lastCompletedTurnProof: { sessionId: string; turnId: string } | null = null;
   private pendingForegroundTurnIdentification: {
     foregroundTurnId: string;
     promise: Promise<string | null>;
@@ -3453,7 +3454,6 @@ export class CodexAppServerAgentSession implements AgentSession {
   private threadRollbackAvailable = true;
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
   private startupEvents: AgentStreamEvent[] | null = null;
-  private nextTurnOrdinal = 0;
   private activeForegroundTurnId: string | null = null;
   private activeClientMessageId: string | null = null;
   private cachedRuntimeInfo: AgentRuntimeInfo | null = null;
@@ -4934,6 +4934,95 @@ export class CodexAppServerAgentSession implements AgentSession {
     });
   }
 
+  completedTurnProof(): { sessionId: string; turnId: string } | null {
+    return this.lastCompletedTurnProof;
+  }
+
+  async verifyCompletedTurnProof(proof: { sessionId: string; turnId: string }): Promise<boolean> {
+    if (
+      !this.client ||
+      this.currentThreadId !== proof.sessionId ||
+      this.activeForegroundTurnId ||
+      this.currentTurnId
+    )
+      return false;
+    const page = z
+      .object({ data: z.array(z.object({ id: z.string(), status: z.string() })).max(1) })
+      .parse(
+        await this.client.request("thread/turns/list", {
+          threadId: proof.sessionId,
+          limit: 1,
+          sortDirection: "desc",
+          itemsView: "notLoaded",
+        }),
+      );
+    return (
+      page.data.length === 1 &&
+      page.data[0].id === proof.turnId &&
+      page.data[0].status === "completed"
+    );
+  }
+
+  async recoverCompletedTurnProof(candidate: {
+    userText: string;
+    assistantText: string;
+    assistantId: string;
+    timestamp: string;
+  }): Promise<{ sessionId: string; turnId: string } | null> {
+    if (!this.client || !this.currentThreadId || this.currentTurnId || this.activeForegroundTurnId)
+      return null;
+    const result = z
+      .object({
+        data: z
+          .array(
+            z.object({
+              id: z.string(),
+              status: z.string(),
+              startedAt: z.number().nullable(),
+              itemsView: z.literal("full"),
+              items: z.array(z.unknown()),
+            }),
+          )
+          .max(1),
+      })
+      .parse(
+        await this.client.request("thread/turns/list", {
+          threadId: this.currentThreadId,
+          limit: 1,
+          sortDirection: "desc",
+          itemsView: "full",
+        }),
+      );
+    const turn = result.data[0];
+    const time = Date.parse(candidate.timestamp);
+    if (
+      !turn ||
+      turn.status !== "completed" ||
+      turn.startedAt === null ||
+      !Number.isFinite(time) ||
+      Math.abs(time - turn.startedAt * 1000) > 2000
+    )
+      return null;
+    const items = (
+      await Promise.all(
+        turn.items.map((item) =>
+          threadItemToTimelineEntries(item, { cwd: this.config.cwd ?? null }),
+        ),
+      )
+    ).flat();
+    const user = items.find((item) => item.type === "user_message");
+    const assistant = items.toReversed().find((item) => item.type === "assistant_message");
+    if (
+      user?.type !== "user_message" ||
+      assistant?.type !== "assistant_message" ||
+      user.text !== candidate.userText ||
+      assistant.text !== candidate.assistantText ||
+      assistant.messageId !== candidate.assistantId
+    )
+      return null;
+    return { sessionId: this.currentThreadId, turnId: turn.id };
+  }
+
   describePersistence(): {
     provider: typeof CODEX_PROVIDER;
     sessionId: string;
@@ -5464,7 +5553,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 
   private createTurnId(): string {
-    return `codex-turn-${this.nextTurnOrdinal++}`;
+    return `codex-turn-${randomUUID()}`;
   }
 
   private pendingNotifications: Promise<void> = Promise.resolve();
@@ -6169,6 +6258,7 @@ export class CodexAppServerAgentSession implements AgentSession {
       return;
     }
     this.markCurrentThreadSaved(parsed.threadId);
+    this.lastCompletedTurnProof = null;
     this.currentTurnId = parsed.turnId;
     const pendingIdentification = this.pendingForegroundTurnIdentification;
     if (
@@ -6219,6 +6309,10 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.dismissInterruptedAsyncQuestions();
       this.emitEvent({ type: "turn_canceled", provider: CODEX_PROVIDER, reason: "interrupted" });
     } else {
+      this.lastCompletedTurnProof =
+        this.currentThreadId && this.currentTurnId
+          ? { sessionId: this.currentThreadId, turnId: this.currentTurnId }
+          : null;
       if (this.planModeEnabled && this.latestPlanResult?.text) {
         this.emitSyntheticPlanApprovalRequest(this.latestPlanResult.text);
       }

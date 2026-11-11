@@ -5171,6 +5171,16 @@ export const SendAgentMessageIfIdleResponseSchema = z.object({
     requestId: z.string(),
     agentId: z.string(),
     accepted: z.boolean(),
+    reason: z
+      .enum([
+        "stale-session",
+        "busy",
+        "finalising",
+        "pending-permission",
+        "superseded",
+        "unverified-turn",
+      ])
+      .optional(),
     error: z.string().nullable(),
   }),
 });

@@ -3904,7 +3904,16 @@ export class DaemonClient {
     agentId: string,
     text: string,
     expectedTurnId: string,
-  ): Promise<{ accepted: boolean }> {
+  ): Promise<{
+    accepted: boolean;
+    reason?:
+      | "stale-session"
+      | "busy"
+      | "finalising"
+      | "pending-permission"
+      | "superseded"
+      | "unverified-turn";
+  }> {
     if (this.lastServerInfoMessage?.features?.agentSendIfIdle !== true) {
       throw new Error("Update the Paseo host to send an idle-only message.");
     }
@@ -3926,7 +3935,7 @@ export class DaemonClient {
           : null,
     });
     if (payload.error) throw new Error(payload.error);
-    return { accepted: payload.accepted };
+    return { accepted: payload.accepted, ...(payload.reason ? { reason: payload.reason } : {}) };
   }
 
   async sendAgentMessage(

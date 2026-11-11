@@ -392,7 +392,19 @@ export interface PaseoAgentHandle {
   reload(options?: { requestId?: string }): Promise<PaseoAgentRefetchResult | null>;
   send(text: string, options?: PaseoAgentSendOptions): Promise<void>;
   supportsSendIfIdle(): boolean;
-  sendIfIdle(text: string, expectedTurnId: string): Promise<{ accepted: boolean }>;
+  sendIfIdle(
+    text: string,
+    expectedTurnId: string,
+  ): Promise<{
+    accepted: boolean;
+    reason?:
+      | "stale-session"
+      | "busy"
+      | "finalising"
+      | "pending-permission"
+      | "superseded"
+      | "unverified-turn";
+  }>;
   respondToPermission(options: PaseoAgentRespondToPermissionOptions): Promise<void>;
   /** Sends a prompt and resolves when that turn finishes or needs attention. */
   run(text: string, options?: PaseoAgentRunOptions): Promise<PaseoAgentRunResult>;

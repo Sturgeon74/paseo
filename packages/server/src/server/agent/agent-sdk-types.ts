@@ -699,6 +699,14 @@ export interface AgentSession {
   ): Promise<AgentPermissionResult | void>;
   /** Null until a new provider process could resume this session; see docs/providers.md. */
   describePersistence(): AgentPersistenceHandle | null;
+  completedTurnProof?(): { sessionId: string; turnId: string } | null;
+  verifyCompletedTurnProof?(proof: { sessionId: string; turnId: string }): Promise<boolean>;
+  recoverCompletedTurnProof?(candidate: {
+    userText: string;
+    assistantText: string;
+    assistantId: string;
+    timestamp: string;
+  }): Promise<{ sessionId: string; turnId: string } | null>;
   /**
    * Resolve once every foreground turn that predates this call can no longer run or become active.
    * Calling while already idle is a successful no-op. Reject only when foreground ownership is

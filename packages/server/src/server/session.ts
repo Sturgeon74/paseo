@@ -8358,6 +8358,33 @@ export class Session {
       return;
     }
     try {
+      // Reopen only an existing, unarchived provider session. Never create a
+      // new conversation as a side effect of an idle-only admission.
+      const stored = await this.agentStorage.get(resolved.agentId);
+      if (
+        !stored ||
+        stored.archivedAt ||
+        (!stored.persistence && !this.agentManager.getAgent(resolved.agentId))
+      ) {
+        this.emit({
+          type: "agent.send_if_idle.response",
+          payload: {
+            requestId: msg.requestId,
+            agentId: resolved.agentId,
+            accepted: false,
+            reason: "stale-session",
+            error: null,
+          },
+        });
+        return;
+      }
+      if (!this.agentManager.getAgent(resolved.agentId)) {
+        await ensureUnarchivedAgentLoaded(resolved.agentId, {
+          agentManager: this.agentManager,
+          agentStorage: this.agentStorage,
+          logger: this.sessionLogger,
+        });
+      }
       const result = await this.agentManager.streamAgentIfIdle(
         resolved.agentId,
         msg.text,
@@ -8380,6 +8407,7 @@ export class Session {
           requestId: msg.requestId,
           agentId: resolved.agentId,
           accepted: result.status === "accepted",
+          ...(result.status === "rejected" ? { reason: result.reason } : {}),
           error: null,
         },
       });

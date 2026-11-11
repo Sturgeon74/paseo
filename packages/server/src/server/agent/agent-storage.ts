@@ -54,6 +54,12 @@ const STORED_AGENT_SCHEMA = z.object({
   title: z.string().nullable().optional(),
   labels: z.record(z.string(), z.string()).default({}),
   lastStatus: AgentStatusSchema.default("closed"),
+  lastCompletedTurnId: z.string().nullable().optional(),
+  lastCompletedTurnProof: z
+    .object({ sessionId: z.string(), turnId: z.string() })
+    .nullable()
+    .optional(),
+  legacyContinuationRecovery: z.boolean().optional(),
   resumeOnStartup: z.boolean().optional(),
   lastModeId: z.string().nullable().optional(),
   config: SERIALIZABLE_CONFIG_SCHEMA,

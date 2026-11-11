@@ -4611,7 +4611,7 @@ describe("Codex app-server provider", () => {
       await expect(child).resolves.toMatchObject({
         type: "provider_subagent",
         provider: "codex",
-        turnId: "codex-turn-0",
+        turnId: expect.stringMatching(/^codex-turn-/),
         event: {
           type: "upsert",
           id: "legacy-only-child-thread",
@@ -4621,7 +4621,7 @@ describe("Codex app-server provider", () => {
       await expect(spawn).resolves.toMatchObject({
         type: "timeline",
         provider: "codex",
-        turnId: "codex-turn-0",
+        turnId: expect.stringMatching(/^codex-turn-/),
         item: {
           type: "tool_call",
           callId: "spawn-legacy-only-child",

@@ -440,6 +440,9 @@ interface ManagedAgentBase {
   persistence: AgentPersistenceHandle | null;
   historyPrimed: boolean;
   lastUserMessageAt: Date | null;
+  lastCompletedTurnId?: string | null;
+  lastCompletedTurnProof?: { sessionId: string; turnId: string } | null;
+  legacyContinuationRecovery?: boolean;
   activeTurnId: string | null;
   activeTurnStartedAt: Date | null;
   lastUsage?: AgentUsage;
@@ -1456,6 +1459,7 @@ export class AgentManager {
     );
   }
 
+  // oxlint-disable-next-line complexity -- Restoration deliberately preserves each optional field independently.
   private async resumeAgentFromPersistenceInternal(
     handle: AgentPersistenceHandle,
     overrides?: Partial<AgentSessionConfig>,
@@ -1532,6 +1536,10 @@ export class AgentManager {
       ...options,
       launchEnv,
       persistence: handle,
+      lastCompletedTurnId: record?.lastCompletedTurnId ?? null,
+      lastCompletedTurnProof: record?.lastCompletedTurnProof ?? null,
+      legacyContinuationRecovery:
+        record?.legacyContinuationRecovery ?? record?.lastCompletedTurnId === undefined,
       restoring: true,
     });
   }
@@ -1732,6 +1740,9 @@ export class AgentManager {
         createdAt: existing.createdAt,
         updatedAt: existing.updatedAt,
         lastUserMessageAt: existing.lastUserMessageAt,
+        // An explicit reload may pick up externally edited provider history.
+        // Its previous in-process turn token can no longer establish ownership.
+        lastCompletedTurnId: null,
         historyPrimed: rehydrateFromDisk ? false : preservedHistoryPrimed,
         lastUsage: preservedLastUsage,
         lastError: preservedLastError,
@@ -2648,6 +2659,10 @@ export class AgentManager {
       return false;
     }
     this.lastCompletedTurnIds.delete(agentId);
+    agent.lastCompletedTurnId = null;
+    agent.lastCompletedTurnProof = null;
+    agent.legacyContinuationRecovery = false;
+    await this.persistSnapshot(agent);
     this.touchUpdatedAt(agent);
     if (options?.clientMessageId) {
       this.recordSubmittedPrompt(agent, prompt, options.clientMessageId, "accepted");
@@ -2727,6 +2742,9 @@ export class AgentManager {
   }): Promise<string> {
     const { agent, agentId, pendingRun, prompt, options } = params;
     try {
+      // Invalidate the prior completed turn durably before a provider can accept
+      // any competing prompt. A crash must never revive the previous token.
+      if (this.registry) await this.persistSnapshot(agent);
       const result = await agent.session.startTurn(prompt, options);
       if (pendingRun.settled) {
         throw new Error(`Agent ${agentId} run was canceled before its turn started`);
@@ -2788,30 +2806,151 @@ export class AgentManager {
     prompt: AgentPromptInput,
     expectedTurnId: string,
   ): Promise<
-    { status: "rejected" } | { status: "accepted"; iterator: AsyncGenerator<AgentStreamEvent> }
+    | {
+        status: "rejected";
+        reason:
+          | "stale-session"
+          | "busy"
+          | "finalising"
+          | "pending-permission"
+          | "superseded"
+          | "unverified-turn";
+      }
+    | { status: "accepted"; iterator: AsyncGenerator<AgentStreamEvent> }
   > {
     return this.runLifecycleMutation(agentId, () =>
+      // oxlint-disable-next-line complexity -- Keep the final admission checks and reservation in one atomic lane.
       this.runForegroundMutation(agentId, async () => {
         await this.drainSessionEvents(agentId);
         const agent = this.agents.get(agentId);
+        const reject = (
+          reason:
+            | "stale-session"
+            | "busy"
+            | "finalising"
+            | "pending-permission"
+            | "superseded"
+            | "unverified-turn",
+        ) => ({ status: "rejected" as const, reason });
+        if (!agent) return reject("stale-session");
+        if (agent.pendingPermissions.size || agent.inFlightPermissionResponses.size)
+          return reject("pending-permission");
+        try {
+          if (agent.session.getPendingPermissions().length) return reject("pending-permission");
+        } catch {
+          return reject("unverified-turn");
+        }
+        if (agent.activeTurnId || agent.activeForegroundTurnId || agent.pendingReplacement)
+          return reject("busy");
+        if (this.runs.hasRun(agentId) && agent.lastCompletedTurnId !== expectedTurnId)
+          return reject("busy");
         if (
-          !agent ||
-          agent.lifecycle !== "idle" ||
           this.collectingRuntimes.has(agentId) ||
-          this.lastCompletedTurnIds.get(agentId) !== expectedTurnId ||
-          agent.activeTurnId ||
-          agent.activeForegroundTurnId ||
-          agent.pendingReplacement ||
           this.runs.hasRun(agentId) ||
-          agent.pendingPermissions.size ||
-          agent.inFlightPermissionResponses.size ||
           this.sessionEventTails.has(agentId)
         )
-          return { status: "rejected" as const };
-        try {
-          if (agent.session.getPendingPermissions().length) return { status: "rejected" as const };
-        } catch {
-          return { status: "rejected" as const };
+          return reject("finalising");
+        if (agent.lifecycle !== "idle") return reject("busy");
+        if (
+          !agent.lastCompletedTurnId &&
+          agent.legacyContinuationRecovery &&
+          agent.session.recoverCompletedTurnProof
+        ) {
+          let proof: { sessionId: string; turnId: string } | null = null;
+          try {
+            const rows = await this.getTimelineRows(agentId);
+            const users = rows.filter((row) => row.item.type === "user_message");
+            const user = users.at(-1);
+            const assistant = rows
+              .toReversed()
+              .find((row) => row.item.type === "assistant_message");
+            if (
+              user &&
+              assistant &&
+              user.item.type === "user_message" &&
+              assistant.item.type === "assistant_message" &&
+              assistant.item.messageId &&
+              user.turnId === expectedTurnId &&
+              assistant.turnId === expectedTurnId &&
+              assistant.seq > user.seq &&
+              users.filter((row) => row.turnId === expectedTurnId).length === 1
+            ) {
+              proof = await agent.session.recoverCompletedTurnProof({
+                userText: user.item.text,
+                assistantText: assistant.item.text,
+                assistantId: assistant.item.messageId,
+                timestamp: user.timestamp,
+              });
+            }
+          } catch {
+            return reject("unverified-turn");
+          }
+          if (!proof) return reject("unverified-turn");
+          await this.drainSessionEvents(agentId);
+          if (agent.pendingPermissions.size || agent.inFlightPermissionResponses.size)
+            return reject("pending-permission");
+          try {
+            if (agent.session.getPendingPermissions().length) return reject("pending-permission");
+          } catch {
+            return reject("unverified-turn");
+          }
+          if (
+            this.agents.get(agentId) !== agent ||
+            !agent.legacyContinuationRecovery ||
+            agent.lastCompletedTurnId
+          )
+            return reject("superseded");
+          if (
+            agent.activeTurnId ||
+            agent.activeForegroundTurnId ||
+            agent.pendingReplacement ||
+            this.runs.hasRun(agentId) ||
+            agent.lifecycle !== "idle"
+          )
+            return reject("busy");
+          if (this.sessionEventTails.has(agentId) || this.collectingRuntimes.has(agentId))
+            return reject("finalising");
+          agent.lastCompletedTurnId = expectedTurnId;
+          agent.lastCompletedTurnProof = proof;
+          agent.legacyContinuationRecovery = false;
+          this.lastCompletedTurnIds.set(agentId, expectedTurnId);
+        }
+        if (!agent.lastCompletedTurnId) return reject("unverified-turn");
+        if (agent.lastCompletedTurnId !== expectedTurnId) return reject("superseded");
+        if (this.lastCompletedTurnIds.get(agentId) !== expectedTurnId) {
+          const proof = agent.lastCompletedTurnProof;
+          if (!proof || !agent.session.verifyCompletedTurnProof) return reject("unverified-turn");
+          let verified = false;
+          try {
+            verified = await agent.session.verifyCompletedTurnProof(proof);
+          } catch {
+            return reject("unverified-turn");
+          }
+          if (!verified) return reject("superseded");
+          await this.drainSessionEvents(agentId);
+          if (agent.pendingPermissions.size || agent.inFlightPermissionResponses.size)
+            return reject("pending-permission");
+          try {
+            if (agent.session.getPendingPermissions().length) return reject("pending-permission");
+          } catch {
+            return reject("unverified-turn");
+          }
+          if (
+            this.agents.get(agentId) !== agent ||
+            agent.lastCompletedTurnId !== expectedTurnId ||
+            agent.lastCompletedTurnProof !== proof
+          )
+            return reject("superseded");
+          if (
+            agent.activeTurnId ||
+            agent.activeForegroundTurnId ||
+            agent.pendingReplacement ||
+            this.runs.hasRun(agentId) ||
+            agent.lifecycle !== "idle"
+          )
+            return reject("busy");
+          if (this.sessionEventTails.has(agentId) || this.collectingRuntimes.has(agentId))
+            return reject("finalising");
         }
         // No await between the final eligibility check and streamAgent's synchronous
         // foreground reservation. Competing prompts observe that reservation.
@@ -2862,6 +3001,9 @@ export class AgentManager {
 
     const agent = existingAgent;
     this.lastCompletedTurnIds.delete(agentId);
+    agent.lastCompletedTurnId = null;
+    agent.lastCompletedTurnProof = null;
+    agent.legacyContinuationRecovery = false;
     const isReplacement = agent.pendingReplacement;
     agent.lastError = undefined;
 
@@ -3396,6 +3538,10 @@ export class AgentManager {
   private async cancelAgentRunNow(agentId: string): Promise<AgentRunCancellationResult> {
     this.lastCompletedTurnIds.delete(agentId);
     const agent = this.requireSessionAgent(agentId);
+    agent.lastCompletedTurnId = null;
+    agent.lastCompletedTurnProof = null;
+    agent.legacyContinuationRecovery = false;
+    await this.persistSnapshot(agent);
     const run =
       this.runs.getRun(agentId) ??
       (agent.lifecycle === "running" ? this.runs.trackAutonomousRun(agentId, null) : null);
@@ -3832,6 +3978,9 @@ export class AgentManager {
       createdAt?: Date;
       updatedAt?: Date;
       lastUserMessageAt?: Date | null;
+      lastCompletedTurnId?: string | null;
+      lastCompletedTurnProof?: { sessionId: string; turnId: string } | null;
+      legacyContinuationRecovery?: boolean;
       labels?: Record<string, string>;
       timeline?: AgentTimelineItem[];
       timelineRows?: AgentTimelineRow[];
@@ -4018,6 +4167,7 @@ export class AgentManager {
     return { durableTimelineHasRows };
   }
 
+  // oxlint-disable-next-line complexity -- Registration initializes independently optional persisted fields.
   private buildManagedAgentForRegister(params: {
     resolvedAgentId: string;
     session: AgentSession;
@@ -4029,6 +4179,9 @@ export class AgentManager {
           createdAt?: Date;
           updatedAt?: Date;
           lastUserMessageAt?: Date | null;
+          lastCompletedTurnId?: string | null;
+          lastCompletedTurnProof?: { sessionId: string; turnId: string } | null;
+          legacyContinuationRecovery?: boolean;
           labels?: Record<string, string>;
           historyPrimed?: boolean;
           lastUsage?: AgentUsage;
@@ -4074,6 +4227,9 @@ export class AgentManager {
       ),
       historyPrimed: options?.historyPrimed ?? durableTimelineHasRows,
       lastUserMessageAt: options?.lastUserMessageAt ?? null,
+      lastCompletedTurnId: options?.lastCompletedTurnId ?? null,
+      lastCompletedTurnProof: options?.lastCompletedTurnProof ?? null,
+      legacyContinuationRecovery: options?.legacyContinuationRecovery ?? false,
       lastUsage: options?.lastUsage,
       lastError: options?.lastError,
       attention: resolveInitialAttention(options?.attention),
@@ -4573,6 +4729,7 @@ export class AgentManager {
     );
   }
 
+  // oxlint-disable-next-line complexity -- Event ordering and terminal persistence are kept together.
   private async handleStreamEvent(
     agent: ActiveManagedAgent,
     event: AgentStreamEvent,
@@ -4629,9 +4786,16 @@ export class AgentManager {
     if (!options?.fromHistory) {
       if (isTurnTerminalEvent(event)) {
         if (terminalDisposition !== "stale") {
-          if (event.type === "turn_completed" && eventTurnId)
+          if (event.type === "turn_completed" && eventTurnId) {
             this.lastCompletedTurnIds.set(agent.id, eventTurnId);
-          else this.lastCompletedTurnIds.delete(agent.id);
+            agent.lastCompletedTurnId = eventTurnId;
+            agent.lastCompletedTurnProof = agent.session.completedTurnProof?.() ?? null;
+            agent.legacyContinuationRecovery = false;
+          } else {
+            this.lastCompletedTurnIds.delete(agent.id);
+            agent.lastCompletedTurnId = null;
+            agent.lastCompletedTurnProof = null;
+          }
         }
         this.runs.settleTerminalRun(agent.id, eventTurnId);
         if (isForegroundEvent) {
@@ -4642,6 +4806,7 @@ export class AgentManager {
       if (flags.shouldDispatchEvent) {
         this.dispatchStream(agent.id, event, { timestamp: new Date().toISOString() });
       }
+      if (isTurnTerminalEvent(event) && this.registry) await this.persistSnapshot(agent);
     }
 
     this.traceHandleStreamEventEnd(agent, event, eventTurnId, flags);
@@ -4795,7 +4960,7 @@ export class AgentManager {
         return undefined;
       case "permission_requested":
         this.onStreamPermissionRequested(agent, event);
-        return undefined;
+        return this.persistSnapshot(agent);
       case "permission_resolved":
         this.onStreamPermissionResolved({ agent, event, options, flags });
         return undefined;
@@ -5001,6 +5166,9 @@ export class AgentManager {
       return;
     }
     this.lastCompletedTurnIds.delete(agent.id);
+    agent.lastCompletedTurnId = null;
+    agent.lastCompletedTurnProof = null;
+    agent.legacyContinuationRecovery = false;
     this.runs.trackAutonomousRun(agent.id, eventTurnId ?? null);
     if (eventTurnId) {
       this.openActiveTurn(agent, eventTurnId, new Date());
@@ -5014,6 +5182,9 @@ export class AgentManager {
     event: Extract<AgentStreamEvent, { type: "permission_requested" }>,
   ): void {
     this.lastCompletedTurnIds.delete(agent.id);
+    agent.lastCompletedTurnId = null;
+    agent.lastCompletedTurnProof = null;
+    agent.legacyContinuationRecovery = false;
     const hadPendingPermissions = agent.pendingPermissions.size > 0;
     agent.pendingPermissions.set(event.request.id, event.request);
     this.refreshSessionPersistence(agent);

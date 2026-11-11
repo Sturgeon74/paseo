@@ -691,6 +691,7 @@ test("idle-only admission preserves queued permission requests and rejects compe
     });
     expect(await manager.streamAgentIfIdle(agent.id, "continue", "turn-1")).toEqual({
       status: "rejected",
+      reason: "pending-permission",
     });
     expect(manager.getAgent(agent.id)?.pendingPermissions.has("permission")).toBe(true);
     expect(manager.getAgent(agent.id)?.lifecycle).toBe("idle");
@@ -702,6 +703,7 @@ test("idle-only admission preserves queued permission requests and rejects compe
     });
     expect(await manager.streamAgentIfIdle(agent.id, "stale after permission", "turn-1")).toEqual({
       status: "rejected",
+      reason: "unverified-turn",
     });
     await drainAsyncGenerator(manager.streamAgent(agent.id, "another turn"));
     const [first, second] = await Promise.all([
@@ -714,10 +716,12 @@ test("idle-only admission preserves queued permission requests and rejects compe
     if (first.status === "accepted") await drainAsyncGenerator(first.iterator);
     expect(await manager.streamAgentIfIdle(agent.id, "stale", "turn-1")).toEqual({
       status: "rejected",
+      reason: "superseded",
     });
     await manager.cancelAgentRun(agent.id);
     expect(await manager.streamAgentIfIdle(agent.id, "after cancellation", "turn-3")).toEqual({
       status: "rejected",
+      reason: "unverified-turn",
     });
   } finally {
     await manager.closeAgent(agent.id).catch(() => undefined);
@@ -748,12 +752,140 @@ test("manual prompt admission wins before a competing idle-only send", async () 
     await startAgentRun(manager, agent.id, "manual", logger, { replaceRunning: true });
     expect(await manager.streamAgentIfIdle(agent.id, "continue", "turn-1")).toEqual({
       status: "rejected",
+      reason: "busy",
     });
     release.resolve();
     await manager.waitForAgentRunStart(agent.id);
   } finally {
     release.resolve();
     await manager.closeAgent(agent.id).catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("idle-only admission fails closed after restart without provider history attestation", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-idle-reopen-"));
+  const client = new TestAgentClient();
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+  try {
+    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    await drainAsyncGenerator(manager.streamAgent(agent.id, "initial"));
+    expect((await storage.get(agent.id))?.lastCompletedTurnId).toBe("turn-1");
+    await manager.closeAgent(agent.id);
+    const restartedStorage = new AgentStorage(join(workdir, "agents"), logger);
+    const restarted = new AgentManager({
+      clients: { codex: client },
+      registry: restartedStorage,
+      logger,
+    });
+    await ensureAgentLoaded(agent.id, {
+      agentManager: restarted,
+      agentStorage: restartedStorage,
+      logger,
+    });
+    const admitted = await restarted.streamAgentIfIdle(agent.id, "continue", "turn-1");
+    expect(admitted).toEqual({ status: "rejected", reason: "unverified-turn" });
+    await restarted.closeAgent(agent.id);
+  } finally {
+    for (const agent of manager.listAgents())
+      await manager.closeAgent(agent.id).catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("provider attestation rejects a superseded turn and a permission arriving during verification", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-proof-race-"));
+  const gate = deferred<boolean>();
+  class ProofSession extends TestAgentSession {
+    completedTurnProof() {
+      return { sessionId: "native-session", turnId: "native-turn" };
+    }
+    verifyCompletedTurnProof() {
+      return gate.promise;
+    }
+  }
+  let reopened: ProofSession | undefined;
+  const client = new (class extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig) {
+      return new ProofSession(config);
+    }
+    override async resumeSession(
+      _handle: AgentPersistenceHandle,
+      config?: Partial<AgentSessionConfig>,
+    ) {
+      reopened = new ProofSession({ provider: "codex", cwd: config?.cwd ?? workdir });
+      return reopened;
+    }
+  })();
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+  try {
+    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    await drainAsyncGenerator(manager.streamAgent(agent.id, "initial"));
+    await manager.closeAgent(agent.id);
+    await ensureAgentLoaded(agent.id, { agentManager: manager, agentStorage: storage, logger });
+    const admission = manager.streamAgentIfIdle(agent.id, "continue", "turn-1");
+    await new Promise((resolve) => setImmediate(resolve));
+    reopened!.pushEvent({
+      type: "permission_requested",
+      provider: "codex",
+      request: { id: "race", provider: "codex", kind: "tool", name: "Read" },
+    });
+    gate.resolve(true);
+    expect(await admission).toEqual({ status: "rejected", reason: "pending-permission" });
+    expect(manager.getAgent(agent.id)?.pendingPermissions.has("race")).toBe(true);
+  } finally {
+    for (const agent of manager.listAgents())
+      await manager.closeAgent(agent.id).catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("a manual send during provider attestation wins without a second turn", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-proof-manual-"));
+  const gate = deferred<boolean>();
+  class ProofSession extends TestAgentSession {
+    completedTurnProof() {
+      return { sessionId: "native-session", turnId: "native-turn" };
+    }
+    verifyCompletedTurnProof() {
+      return gate.promise;
+    }
+  }
+  const client = new (class extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig) {
+      return new ProofSession(config);
+    }
+    override async resumeSession(
+      _handle: AgentPersistenceHandle,
+      config?: Partial<AgentSessionConfig>,
+    ) {
+      return new ProofSession({ provider: "codex", cwd: config?.cwd ?? workdir });
+    }
+  })();
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+  try {
+    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    await drainAsyncGenerator(manager.streamAgent(agent.id, "initial"));
+    await manager.closeAgent(agent.id);
+    await ensureAgentLoaded(agent.id, { agentManager: manager, agentStorage: storage, logger });
+    const admission = manager.streamAgentIfIdle(agent.id, "continue", "turn-1");
+    await new Promise((resolve) => setImmediate(resolve));
+    const manual = manager.streamAgent(agent.id, "manual");
+    gate.resolve(true);
+    expect(await admission).toEqual({ status: "rejected", reason: "superseded" });
+    await drainAsyncGenerator(manual);
+  } finally {
+    for (const agent of manager.listAgents())
+      await manager.closeAgent(agent.id).catch(() => undefined);
     rmSync(workdir, { recursive: true, force: true });
   }
 });
