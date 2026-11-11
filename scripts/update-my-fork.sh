@@ -6,10 +6,10 @@ cd "$ROOT"
 
 usage() {
   echo "Usage: bash scripts/update-my-fork.sh [--build-only | --install-only]"
-  echo "Updates the current fork branch, builds macOS and an iOS device IPA, and offers to install macOS."
+  echo "Updates the current fork branch, builds macOS and an iOS device IPA, and offers to install both."
   echo "--build-only skips fetching and merging; --install-only uses the existing build."
   echo "The iOS IPA is written to artifacts/paseo-device-hub.ipa."
-  echo "After building, you can install it directly to a connected iPad with devicectl."
+  echo "You can install the IPA to a connected iPhone or iPad with devicectl."
   echo "iOS signing settings are read from .dev/paseo-fork-signing.conf or the environment."
   echo "Xcode needs an ad hoc profile for the configured bundle ID, the iPad, and its signing certificate."
 }
@@ -89,6 +89,7 @@ case "$(uname -m)" in
   *) echo "Unsupported Mac architecture: $(uname -m)" >&2; exit 1 ;;
 esac
 app="$ROOT/packages/desktop/release/$output_dir/Paseo.app"
+ipa="$ROOT/artifacts/paseo-device-hub.ipa"
 if [[ "$mode" != "--install-only" ]]; then
   echo "Installing the lockfile dependencies with npm ci..."
   npm ci
@@ -156,36 +157,46 @@ PLIST
     exit 1
   fi
   mkdir -p "$ROOT/artifacts"
-  ipa="$ROOT/artifacts/paseo-device-hub.ipa"
-  cp "$ipa_source" "$ipa"
-
-  if command -v xcrun >/dev/null 2>&1 && xcrun devicectl list devices; then
-    read -r -p "Install this IPA to a connected iPad now? [y/N] " ios_confirm
-    if [[ "$ios_confirm" == "y" || "$ios_confirm" == "Y" ]]; then
-      read -r -p "Enter the iPad identifier or name: " ios_device
-      if [[ -z "$ios_device" ]]; then
-        echo "No iPad selected; the IPA is available at $ipa."
-      else
-        install_dir="$ios_workdir/install"
-        mkdir -p "$install_dir"
-        unzip -q "$ipa" -d "$install_dir"
-        app_bundle="$(find "$install_dir/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
-        if [[ -z "$app_bundle" ]]; then
-          echo "Could not find an app bundle inside $ipa." >&2
-          exit 1
-        fi
-        xcrun devicectl device install app --device "$ios_device" "$app_bundle"
-        echo "Installed Paseo on $ios_device."
-      fi
-    fi
-  else
-    echo "Could not list Xcode devices; the IPA is available at $ipa for Device Hub installation."
+  cp "$ipa_source" "$ios_workdir/new.ipa"
+  if [[ -f "$ipa" ]]; then
+    cp "$ipa" "$ios_workdir/previous.ipa"
+    mv "$ios_workdir/previous.ipa" "$ipa.backup"
   fi
+  mv "$ios_workdir/new.ipa" "$ipa"
 
   rm -rf "$ios_workdir"
   echo "iOS Release IPA ready: $ipa"
 fi
-if [[ ! -d "$app" ]]; then echo "App not found at $app. Build it first." >&2; exit 1; fi
+if [[ -f "$ipa" ]]; then
+  read -r -p "Install the iOS IPA to a connected iPhone or iPad now? [y/N] " ios_confirm
+  if [[ "$ios_confirm" == "y" || "$ios_confirm" == "Y" ]]; then
+    install_dir="$(mktemp -d "${TMPDIR:-/tmp}/paseo-ios-install.XXXXXX")"
+    trap 'rm -rf "$install_dir"' EXIT
+    unzip -q "$ipa" -d "$install_dir"
+    app_bundle="$(find "$install_dir/Payload" -maxdepth 1 -type d -name '*.app' -print -quit)"
+    if [[ -z "$app_bundle" ]]; then
+      echo "Could not find an app bundle inside $ipa." >&2
+      exit 1
+    fi
+    while true; do
+      if xcrun devicectl list devices; then
+        read -r -p "Enter the iPhone or iPad identifier or name (or Enter to skip): " ios_device
+        if [[ -z "$ios_device" ]]; then break; fi
+        if xcrun devicectl device install app --device "$ios_device" "$app_bundle"; then
+          echo "Installed Paseo on $ios_device."
+          break
+        fi
+      fi
+      read -r -p "Device unavailable or installation failed. Unlock or reconnect it and try again? [y/N] " retry
+      if [[ "$retry" != "y" && "$retry" != "Y" ]]; then break; fi
+    done
+    rm -rf "$install_dir"
+    trap - EXIT
+  fi
+else
+  echo "No iOS IPA found at $ipa; skipping iOS installation."
+fi
+if [[ ! -d "$app" ]]; then echo "macOS app not found at $app; skipping macOS installation."; exit 0; fi
 echo "This will install $app to /Applications/Paseo.app and retain the previous app as a backup."
 echo "Finish any agent work and quit Paseo before installing; the script will not stop it."
 read -r -p "Install the app now? [y/N] " confirm
@@ -219,4 +230,11 @@ if ! mv "$staging/Paseo.app" /Applications/Paseo.app; then
   exit 1
 fi
 echo "Installed /Applications/Paseo.app."
-if [[ -n "$backup" ]]; then echo "Previous app saved at $backup/Paseo.app"; fi
+if [[ -n "$backup" ]]; then
+  echo "Previous app saved at $backup/Paseo.app"
+  for old_backup in /Applications/.paseo-backups/backup.*; do
+    if [[ -d "$old_backup" && "$old_backup" != "$backup" ]]; then
+      rm -rf "$old_backup"
+    fi
+  done
+fi
