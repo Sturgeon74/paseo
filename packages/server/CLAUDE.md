@@ -1,8 +1,6 @@
 # AGENTS.md — Paseo Server Development Guide
 
-Inherit the repository root [AGENTS.md](../../AGENTS.md) and its linked canonical global, testing and GitHub workflow policies. This package guide adds server-specific conventions only; it does not authorise production API calls, Git publication, new simulator creation or restarting a live daemon.
-
-For AI coding agents working in `packages/server`. Supplements the repository root [CLAUDE.md](../../CLAUDE.md).
+For AI coding agents working in `packages/server`. Supplements [CLAUDE.md](../CLAUDE.md) at the repo root.
 
 ## Project Overview
 
@@ -40,7 +38,7 @@ npx vitest run -t "returns timeout error when provider times out"
 npm run test:unit                    # Unit tests only (excludes e2e)
 npm run test:integration             # Integration tests
 npm run test:integration:all         # All integration tests
-npm run test:integration:real       # Real API integration tests (only with explicit approval and isolated credentials)
+npm run test:integration:real       # Real API integration tests
 npm run test:integration:local       # Local integration tests
 npm run test:e2e                     # End-to-end tests (excludes real/local)
 npm run test:e2e:all                # All e2e tests
@@ -138,9 +136,9 @@ type FetchState =
 
 Tests prove behavior, not structure. Every test should answer: "what user-visible or API-visible behavior does this verify?"
 
-- **Focused behaviour checks**: Work in small vertical slices. Use test-first development where useful, while following the shared implementation-first and proportionate-testing policy.
+- **TDD**: Work in vertical slices — one test, one implementation, repeat
 - **Determinism first**: No conditional assertions, no timing/randomness, no weak assertions
-- **Safe local dependencies**: Prefer disposable local database and file-system fixtures for integration tests. Mock/stub external APIs and credentials by default; never run against live accounts, Production services or personal data without explicit task-specific approval.
+- **Real deps over mocks**: Database, APIs, file system — real in tests
 - **Flaky tests are a bug**: Never remove a test because it's flaky; fix the variance source
 
 ---
