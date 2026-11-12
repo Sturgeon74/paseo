@@ -2,7 +2,7 @@
 
 Inherit the repository root [AGENTS.md](../../AGENTS.md) and its linked canonical global, testing and GitHub workflow policies. This package guide adds server-specific conventions only; it does not authorise production API calls, Git publication, new simulator creation or restarting a live daemon.
 
-For AI coding agents working in `packages/server`. Supplements [CLAUDE.md](../CLAUDE.md) at the repo root.
+For AI coding agents working in `packages/server`. Supplements the repository root [CLAUDE.md](../../CLAUDE.md).
 
 ## Project Overview
 
