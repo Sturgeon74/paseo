@@ -1,4 +1,10 @@
-# CLAUDE.md
+# Paseo — Project Agent Guide
+
+## Shared agent policy — Codex, Claude, DeepSeek
+
+Before substantive work, load [global AGENTS.md](https://github.com/Sturgeon74/documents/blob/main/shared/agent-policy/AGENTS.md) and [focused testing](https://github.com/Sturgeon74/documents/blob/main/shared/agent-policy/testing.md). For GitHub Issues, Paseo Kanban, documentation and commit operations, also load [GitHub workflow](https://github.com/Sturgeon74/documents/blob/main/shared/agent-policy/github-workflow.md). This is primarily a TypeScript/Paseo project: load [Apple development guidance](https://github.com/Sturgeon74/documents/blob/main/shared/agent-policy/apple-development.md) only for tasks that actually involve Apple/Xcode tools or simulators.
+
+These shared policies govern permissions, data safety, Git publication and test scope; the more specific repository guidance below governs technical conventions. The current user's explicit instructions take precedence. Neither release instructions nor CI suggestions authorise pushing, merging, deploying or restarting the live daemon.
 
 Paseo is a mobile app for monitoring and controlling your local AI coding agents from anywhere. Your dev environment, in your pocket. Connects directly to your actual development environment — your code stays on your machine.
 
@@ -132,10 +138,10 @@ release builds in a short-lived release workspace from `origin/main` or a releas
   - Run only the specific test file you changed: `npx vitest run <file> --bail=1`
   - Never run `npm run test` for an entire workspace unless explicitly asked.
   - If you must run a broad suite, pipe output to a file and read it afterward: `npx vitest run <file> --bail=1 > /tmp/test-output.txt 2>&1` then read the file.
-  - Never re-run a test suite that another agent already ran and reported green — trust the result.
-  - For full suite verification, push to CI and check GitHub Actions instead.
+  - Avoid redundant reruns of verified green tests against unchanged code; rerun affected tests after relevant changes or when evidence is incomplete.
+  - For full-suite verification, inspect existing CI evidence. If a fresh CI run needs a push, request explicit owner approval first; CI guidance never authorises an independent push, PR or merge.
 - Add tests to existing suites and reuse their npm scripts and CI jobs instead of creating feature-specific ones.
-- **Always run typecheck and lint after every change.**
+- **Run relevant typecheck and lint checks for changed source.** Keep checks proportionate; use wider workspace checks at integration/release gates or for actual cross-package impact.
 - **Build workspace packages before diagnosing cross-package type errors.** This repo consumes generated declarations across workspaces. If typecheck fails in a package that depends on another workspace, rebuild the owning stack first so `dist` declarations are current:
   - `npm run build:client` — rebuild protocol and client declarations.
   - `npm run build:server` — rebuild highlight, relay, protocol, client, server, and CLI when server/CLI types may be stale.
